@@ -1,5 +1,5 @@
 import closeWithGrace from "close-with-grace";
-import { buildServer } from "./fastify-instance.js";
+import { buildServer } from "./app.js";
 
 async function start() {
   const app = await buildServer();
