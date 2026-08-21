@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import type { FastifyInstance } from "fastify";
-import { buildServer } from "../src/app.js";
+import { buildServer } from "../src/fastify-instance.js";
 
 // Cached across warm invocations of the same serverless instance.
 let appPromise: Promise<FastifyInstance> | null = null;
