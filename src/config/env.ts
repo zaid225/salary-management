@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import fastifyEnv from "@fastify/env";
 
 export interface EnvConfig {
-  PORT: number;
+  PORT: string;
   HOST: string;
   NODE_ENV: "development" | "production" | "test";
   MONGODB_URI: string;
@@ -32,7 +32,12 @@ const schema = {
     "CLERK_PUBLISHABLE_KEY",
   ],
   properties: {
-    PORT: { type: "number", default: 3000 },
+    // Kept as a string, not "number": env vars are always strings, and an
+    // empty/malformed value from a dashboard (Vercel doesn't even use PORT
+    // for serverless functions) would otherwise fail AJV coercion and crash
+    // the whole app before it starts. Parsed to a number only where it's
+    // actually used (server.ts's local app.listen()).
+    PORT: { type: "string", default: "3000" },
     HOST: { type: "string", default: "0.0.0.0" },
     NODE_ENV: {
       type: "string",

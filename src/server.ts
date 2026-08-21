@@ -9,8 +9,14 @@ async function start() {
     await app.close();
   });
 
+  const port = Number(app.config.PORT);
+  if (!Number.isInteger(port)) {
+    app.log.error({ PORT: app.config.PORT }, "PORT env var is not a valid integer");
+    process.exit(1);
+  }
+
   try {
-    await app.listen({ host: app.config.HOST, port: app.config.PORT });
+    await app.listen({ host: app.config.HOST, port });
   } catch (err) {
     app.log.error({ err }, "failed to start server");
     process.exit(1);
