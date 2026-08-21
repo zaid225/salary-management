@@ -16,10 +16,11 @@ export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
-      transport:
-        process.env.NODE_ENV === "production"
-          ? undefined
-          : { target: "pino-pretty" },
+      // pino-pretty spawns a worker thread, which routinely fails under
+      // Vercel's serverless bundling. Key off Vercel's own VERCEL=1 (set
+      // automatically on every deployment) instead of trusting NODE_ENV to
+      // be set correctly - a wrong NODE_ENV value must never re-enable this.
+      transport: process.env.VERCEL ? undefined : { target: "pino-pretty" },
     },
   });
 
