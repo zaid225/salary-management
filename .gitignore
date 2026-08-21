@@ -11,3 +11,6 @@ npm-debug.log*
 .mcp.json
 .agents/
 skills-lock.json
+
+# vercel
+.vercel/

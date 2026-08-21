@@ -12,14 +12,17 @@ declare module "fastify" {
 }
 
 async function postgresPlugin(app: FastifyInstance): Promise<void> {
-  // Hackathon-scale traditional server assumption: moderate concurrency,
-  // no measured ops/sec yet. maxPoolSize/minPoolSize sized conservatively;
-  // raise maxPoolSize if wait-queue latency shows pool exhaustion.
+  // Deploy target is Vercel serverless (each function instance gets its own
+  // pool, and the module is cached across warm invocations - see api/index.ts).
+  // Sized per Vercel's own connection-pooling guidance: small maxPoolSize,
+  // minPoolSize 0 so idle instances don't hold connections open. Same values
+  // work fine for local `npm run dev` at hackathon traffic levels; raise
+  // maxPoolSize only if you see wait-queue latency under real load.
   const pool = new Pool({
     connectionString: app.config.DATABASE_URL,
-    max: 20,
-    min: 2,
-    idleTimeoutMillis: 30_000,
+    max: 5,
+    min: 0,
+    idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 5_000,
   });
 

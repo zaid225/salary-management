@@ -9,15 +9,14 @@ declare module "fastify" {
 }
 
 async function mongoPlugin(app: FastifyInstance): Promise<void> {
-  // Same hackathon-scale assumption as postgres.ts: traditional long-running
-  // server, moderate concurrency. maxPoolSize kept conservative; raise if
-  // connection wait times are observed under load.
+  // Same serverless assumption as postgres.plugin.ts: Vercel functions, one
+  // pool per warm instance, minPoolSize 0 to release connections when idle.
   mongoose.set("strictQuery", true);
 
   await mongoose.connect(app.config.MONGODB_URI, {
-    maxPoolSize: 20,
-    minPoolSize: 2,
-    maxIdleTimeMS: 30_000,
+    maxPoolSize: 5,
+    minPoolSize: 0,
+    maxIdleTimeMS: 10_000,
     connectTimeoutMS: 5_000,
     serverSelectionTimeoutMS: 5_000,
   });
