@@ -19,6 +19,22 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse,
 ): Promise<void> {
-  const app = await getApp();
-  app.server.emit("request", req, res);
+  try {
+    const app = await getApp();
+    app.server.emit("request", req, res);
+  } catch (err) {
+    // Don't cache a permanently-broken promise - next invocation retries.
+    appPromise = null;
+    console.error("cold start failed", err);
+    res.statusCode = 500;
+    res.setHeader("content-type", "application/json");
+    res.end(
+      JSON.stringify({
+        error: {
+          message: "Server failed to start",
+          detail: err instanceof Error ? err.message : String(err),
+        },
+      }),
+    );
+  }
 }
