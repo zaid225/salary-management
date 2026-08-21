@@ -21,7 +21,18 @@ export default async function handler(
 ): Promise<void> {
   try {
     const app = await getApp();
-    app.server.emit("request", req, res);
+    // emit() is fire-and-forget: it triggers Fastify's async request
+    // handling but returns before that handling completes. Without waiting
+    // for the response to actually finish, this handler's promise resolves
+    // early and Vercel can tear down the function mid-response -
+    // FUNCTION_INVOCATION_FAILED for any route not fast enough to win
+    // that race.
+    await new Promise<void>((resolve, reject) => {
+      res.once("finish", resolve);
+      res.once("close", resolve);
+      res.once("error", reject);
+      app.server.emit("request", req, res);
+    });
   } catch (err) {
     // Don't cache a permanently-broken promise - next invocation retries.
     appPromise = null;
