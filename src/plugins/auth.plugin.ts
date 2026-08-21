@@ -17,12 +17,27 @@ declare module "fastify" {
 }
 
 async function authPlugin(app: FastifyInstance): Promise<void> {
+  const configured = Boolean(app.config.CLERK_SECRET_KEY && app.config.CLERK_PUBLISHABLE_KEY);
+
+  app.decorateRequest("auth", undefined);
+
+  if (!configured) {
+    app.log.warn(
+      "CLERK_SECRET_KEY/CLERK_PUBLISHABLE_KEY not set - skipping Clerk registration, /auth routes will 501",
+    );
+    app.decorate(
+      "authenticate",
+      async (_request: FastifyRequest, reply: FastifyReply) => {
+        return reply.notImplemented("Auth is not configured on this deployment");
+      },
+    );
+    return;
+  }
+
   await app.register(clerkPlugin, {
     secretKey: app.config.CLERK_SECRET_KEY,
     publishableKey: app.config.CLERK_PUBLISHABLE_KEY,
   });
-
-  app.decorateRequest("auth", undefined);
 
   app.decorate(
     "authenticate",

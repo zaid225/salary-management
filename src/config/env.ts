@@ -20,17 +20,14 @@ declare module "fastify" {
   }
 }
 
+// Nothing is `required` here on purpose: this app should boot and serve
+// /health even with zero real credentials configured. Each integration
+// (postgres, mongo, clerk) checks its own var at plugin-registration time
+// and skips connecting rather than crashing the whole process when it's
+// blank. Fill in real values in Vercel's dashboard / .env as they become
+// available - no code change needed when you do.
 const schema = {
   type: "object",
-  required: [
-    "MONGODB_URI",
-    "DATABASE_URL",
-    "OPENROUTER_API_KEY",
-    "UNSPLASH_ACCESS_KEY",
-    "PARALLEL_API_KEY",
-    "CLERK_SECRET_KEY",
-    "CLERK_PUBLISHABLE_KEY",
-  ],
   properties: {
     // Kept as a string, not "number": env vars are always strings, and an
     // empty/malformed value from a dashboard (Vercel doesn't even use PORT
@@ -44,13 +41,13 @@ const schema = {
       enum: ["development", "production", "test"],
       default: "development",
     },
-    MONGODB_URI: { type: "string" },
-    DATABASE_URL: { type: "string" },
-    OPENROUTER_API_KEY: { type: "string" },
-    UNSPLASH_ACCESS_KEY: { type: "string" },
-    PARALLEL_API_KEY: { type: "string" },
-    CLERK_SECRET_KEY: { type: "string" },
-    CLERK_PUBLISHABLE_KEY: { type: "string" },
+    MONGODB_URI: { type: "string", default: "" },
+    DATABASE_URL: { type: "string", default: "" },
+    OPENROUTER_API_KEY: { type: "string", default: "" },
+    UNSPLASH_ACCESS_KEY: { type: "string", default: "" },
+    PARALLEL_API_KEY: { type: "string", default: "" },
+    CLERK_SECRET_KEY: { type: "string", default: "" },
+    CLERK_PUBLISHABLE_KEY: { type: "string", default: "" },
   },
 } as const;
 

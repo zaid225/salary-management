@@ -4,11 +4,17 @@ import mongoose from "mongoose";
 
 declare module "fastify" {
   interface FastifyInstance {
-    mongo: typeof mongoose;
+    mongo: typeof mongoose | null;
   }
 }
 
 async function mongoPlugin(app: FastifyInstance): Promise<void> {
+  if (!app.config.MONGODB_URI) {
+    app.log.warn("MONGODB_URI not set - skipping MongoDB connection");
+    app.decorate("mongo", null);
+    return;
+  }
+
   // Same serverless assumption as postgres.plugin.ts: Vercel functions, one
   // pool per warm instance, minPoolSize 0 to release connections when idle.
   mongoose.set("strictQuery", true);

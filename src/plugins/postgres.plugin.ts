@@ -6,12 +6,19 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 declare module "fastify" {
   interface FastifyInstance {
-    pg: Pool;
-    db: NodePgDatabase;
+    pg: Pool | null;
+    db: NodePgDatabase | null;
   }
 }
 
 async function postgresPlugin(app: FastifyInstance): Promise<void> {
+  if (!app.config.DATABASE_URL) {
+    app.log.warn("DATABASE_URL not set - skipping Postgres connection");
+    app.decorate("pg", null);
+    app.decorate("db", null);
+    return;
+  }
+
   // Deploy target is Vercel serverless (each function instance gets its own
   // pool, and the module is cached across warm invocations - see api/index.ts).
   // Sized per Vercel's own connection-pooling guidance: small maxPoolSize,
