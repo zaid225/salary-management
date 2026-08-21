@@ -1,0 +1,13 @@
+.claude/
+node_modules/
+dist/
+.env
+.env.local
+*.log
+npm-debug.log*
+.DS_Store
+
+# local tooling / secrets - not part of the app
+.mcp.json
+.agents/
+skills-lock.json
