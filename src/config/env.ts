@@ -12,6 +12,9 @@ export interface EnvConfig {
   PARALLEL_API_KEY: string;
   CLERK_SECRET_KEY: string;
   CLERK_PUBLISHABLE_KEY: string;
+  UPSTASH_REDIS_REST_URL: string;
+  UPSTASH_REDIS_REST_TOKEN: string;
+  QSTASH_TOKEN: string;
 }
 
 declare module "fastify" {
@@ -48,6 +51,13 @@ const schema = {
     PARALLEL_API_KEY: { type: "string", default: "" },
     CLERK_SECRET_KEY: { type: "string", default: "" },
     CLERK_PUBLISHABLE_KEY: { type: "string", default: "" },
+    // Cost/perf: Upstash's REST-based Redis and QStash are the serverless-
+    // correct choices here, not a traditional TCP redis/queue - Vercel
+    // functions are short-lived, so a persistent connection pool doesn't
+    // survive between invocations the way it would on a long-running server.
+    UPSTASH_REDIS_REST_URL: { type: "string", default: "" },
+    UPSTASH_REDIS_REST_TOKEN: { type: "string", default: "" },
+    QSTASH_TOKEN: { type: "string", default: "" },
   },
 } as const;
 

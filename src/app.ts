@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import Fastify, { type FastifyInstance } from "fastify";
 import sensible from "@fastify/sensible";
+import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 
 import { loadEnv } from "./config/env.js";
 import corsPlugin from "./plugins/cors.plugin.js";
@@ -9,6 +10,8 @@ import mongoPlugin from "./plugins/mongo.plugin.js";
 import authPlugin from "./plugins/auth.plugin.js";
 import aiClients from "./plugins/ai.plugin.js";
 import mediaClients from "./plugins/media.plugin.js";
+import redisPlugin from "./plugins/redis.plugin.js";
+import queuePlugin from "./plugins/queue.plugin.js";
 
 import { registerRoutes } from "./routes/index.js";
 import { registerErrorHandler } from "./middlewares/error-handler.js";
@@ -25,6 +28,12 @@ export async function buildServer(): Promise<FastifyInstance> {
     },
   });
 
+  // Global zod validation/serialization - opt-in per route: any route whose
+  // schema.body/querystring/response is a zod object gets validated and
+  // typed automatically. Routes without zod schemas are unaffected.
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+
   await loadEnv(app);
 
   await app.register(sensible);
@@ -34,6 +43,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(authPlugin);
   await app.register(aiClients);
   await app.register(mediaClients);
+  await app.register(redisPlugin);
+  await app.register(queuePlugin);
 
   registerErrorHandler(app);
 
