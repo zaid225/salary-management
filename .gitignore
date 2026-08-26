@@ -14,3 +14,11 @@ skills-lock.json
 
 # vercel
 .vercel/
+
+# cloudflare
+.wrangler/
+.dev.vars
+worker-configuration.d.ts
+
+# git worktrees (subagent-driven-development isolation)
+.worktrees/
