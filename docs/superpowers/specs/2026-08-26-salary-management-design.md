@@ -33,9 +33,12 @@ with two permission levels per organization — see §5.
 - An audit log of every salary/employee mutation (actor, before/after,
   timestamp) — compliance-flavored, expected of software handling
   compensation data.
-- **Custom multi-tenant organizations, built on our own tables, not Clerk's
-  Organization primitive.** Clerk provides identity only (sign-up/sign-in/
-  session). Org creation, membership, roles, and invitations are our own
+- **Custom multi-tenant organizations, built on our own tables — Clerk's
+  Organization feature is off-limits.** Clerk provides identity only
+  (credential storage, verification, session issuance), reached through a
+  fully custom sign-in/sign-up UI (Clerk's headless hooks, not its hosted
+  `<SignIn/>`/`<SignUp/>`/`<OrganizationSwitcher/>`/`<CreateOrganization/>`
+  components). Org creation, membership, roles, and invitations are our own
   `organizations`/`memberships`/`invitations` tables and API — see §5.
 - Role-gated access per organization: admin (read/write) vs viewer
   (read-only).
@@ -253,7 +256,12 @@ verification. **Organizations, membership, and roles are entirely our own**
 Organization primitive.
 
 **Flow:**
-1. User signs up/in via Clerk (`<SignUp/>`/`<SignIn/>`).
+1. User signs up/in through a **custom-built UI** (our own form components —
+   email/password + fields, not Clerk's hosted `<SignIn/>`/`<SignUp/>`),
+   wired to Clerk's headless client (`@clerk/clerk-react`'s `useSignIn`/
+   `useSignUp` hooks driving `signIn.create`/`signUp.create` and the
+   verification-code step) so the visual design stays entirely ours while
+   Clerk still owns credential storage, verification, and session issuance.
 2. `GET /organizations` returns the orgs they belong to. Zero → onboarding
    gate: *create an organization* (`POST /organizations`, caller becomes its
    `admin` membership) or *redeem an invite link*.
@@ -297,7 +305,11 @@ Tailwind config colors. Keeps the visual system consistent and swappable
 without touching component code.
 
 **Pages:**
-- Sign-in / sign-up — Clerk's hosted `<SignIn/>`/`<SignUp/>`.
+- Sign-in / sign-up — fully custom UI (our own shadcn-styled form
+  components: email/password fields, verification-code step), built on
+  Clerk's headless `useSignIn`/`useSignUp` hooks — **no Clerk hosted
+  `<SignIn/>`/`<SignUp/>` components** anywhere in the app. Clerk stays
+  the identity/session backend only; every pixel is ours.
 - Onboarding gate — shown whenever there's no active organization: create
   one, or paste/open an invite link. Nothing past this screen is reachable
   without an active org.
