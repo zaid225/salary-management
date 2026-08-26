@@ -680,7 +680,65 @@ page's invite/edit actions) client-side *and* the API rejects the write
 server-side regardless — client-side hiding is UX, not the security
 boundary.
 
-## 8. Seeding
+## 8. Data fetching, mutations & UI feedback
+
+**TanStack Query is the only server-state layer** — no `useEffect` + manual
+`fetch`, no component-local "loading" booleans. Every read is a `useQuery`,
+every write is a `useMutation`.
+
+**Query keys are org-scoped first, always:** `["employees", orgId, {
+country, department, status, search, sort, page }]`,
+`["analytics-summary", orgId]`, `["members", orgId]`, `["audit-log", orgId,
+{ page }]`. `orgId` as the leading key segment isn't cosmetic — it's what
+stops a stale cache entry from another organization flashing on screen for
+a moment after switching orgs in the switcher, the client-side mirror of
+the server's own tenant-isolation discipline (§5). Switching the active org
+doesn't need a manual `queryClient.clear()`; new keys naturally miss the
+cache and refetch under the new `X-Org-Id`.
+
+**Filter/sort/pagination state lives in the URL** (search params), not
+component state — shareable/bookmarkable, and it's what feeds the query key
+directly. The *server* does the actual filtering/sorting/paginating
+(§4's `limit`/`cursor` + filter params); TanStack Query's job is caching,
+deduping, and revalidating each distinct page/filter combination, never
+fetching a full list and slicing it client-side (that would silently
+reintroduce the unbounded-list problem §4 already ruled out).
+
+**Mutations** (create/update/soft-delete employee, add salary record, CSV
+import, invite member, accept invite, change/remove member role, create
+org): plain `useMutation` + `invalidateQueries` on success — **not**
+optimistic updates. For compensation data, a wrong optimistic flash that
+then reverts is worse than a half-second loading state; this is a
+deliberate YAGNI call, not an oversight.
+
+**Toasts** (shadcn's `sonner`-based `<Toaster/>`, mounted once at the app
+root): every mutation's `onSuccess`/`onError` fires exactly one toast —
+success (create/update/import-complete/invite-sent/role-changed), a
+distinct "removed" wording for soft-deletes (employee terminated, member
+removed, invite revoked — same toast variant, different copy so a delete
+doesn't read identically to an edit), and a destructive-variant toast on
+`onError` whose message is the server's actual zod-derived error (§6),
+never a generic "Something went wrong" — matches this repo's own
+`error-handling-logging.md` rule 4 (4xx messages specific enough to act on).
+
+**Loading/error states:** shadcn `Skeleton` rows for table loading
+(`isPending`), not a spinner — better perceived performance for a table the
+user is about to scan anyway; `isError` renders an inline retry state, not
+a full-page crash.
+
+**Destructive actions get a confirm step:** every soft-delete/remove
+(terminate employee, remove member, revoke invitation) opens a shadcn
+`AlertDialog` before the mutation fires — no bare button wired directly to
+a destructive call.
+
+**shadcn setup:** `components.json` with `style: "new-york"`, `cssVariables:
+true`, base color mapped from the tweakcn theme's own tokens (§7) rather
+than shadcn's default palette. Components installed via `npx shadcn add`:
+`button`, `input`, `label`, `form` (the `react-hook-form` wrapper, §6),
+`table`, `dialog`, `alert-dialog`, `dropdown-menu`, `select`, `badge`,
+`card`, `tabs`, `avatar`, `skeleton`, `sonner`, `separator`, `pagination`.
+
+## 9. Seeding
 
 `hono-worker/scripts/seed.ts`, run with `tsx` against `DATABASE_URL`
 directly (same pattern `drizzle-kit` already uses, bypassing Hyperdrive —
@@ -740,7 +798,7 @@ countries/currencies with country-appropriate salary bands (seeded RNG, not
 `Math.random()`, so re-running produces the same dataset — useful for
 tests and for reproducing a specific demo state).
 
-## 9. Testing
+## 10. Testing
 
 Vitest, fast and deterministic — no network calls, no LLM.
 
@@ -762,9 +820,13 @@ Vitest, fast and deterministic — no network calls, no LLM.
   that an invalid field (e.g. negative salary, malformed email) renders its
   `zodResolver`-produced error and blocks submit — same schema as the
   backend test for that resource, so the two suites are provably checking
-  the same rule.
+  the same rule. Mutation tests (with a test `QueryClient`, mocked fetch)
+  assert the right toast variant/message fires on success vs. error, that
+  a destructive action is blocked until the `AlertDialog` is confirmed, and
+  that switching the active org doesn't show stale data from the previous
+  org's query cache (§8's org-scoped-query-key guarantee).
 
-## 10. Deployment
+## 11. Deployment
 
 - `hono-worker` → `wrangler deploy`, `HYPERDRIVE` bound to the Supabase
   Postgres connection string, `CLERK_SECRET_KEY` set as a secret.
@@ -787,7 +849,7 @@ degrades the affected feature, never crashes boot):
 | `UPSTASH_REDIS_REST_URL`/`TOKEN` | Rate limiting (invitations, CSV import) |
 | `SEED_ADMIN_CLERK_USER_ID` | `seed.ts` only |
 
-## 11. Out-of-repo housekeeping
+## 12. Out-of-repo housekeeping
 
 - Delete `fastify-api/` (superseded scaffold, unused by this feature).
 - The old `sessions`/`chunks` schema in `hono-worker/src/models/schema.ts`
