@@ -4,6 +4,10 @@ import type { AppBindings } from "./lib/context.js";
 import { onError, notFound } from "./controllers/error.middleware.js";
 import { healthRoutes } from "./routes/health.routes.js";
 import { exampleRoutes } from "./routes/example.routes.js";
+import { webhooksRoutes } from "./routes/webhooks.routes.js";
+import { organizationsRoutes } from "./routes/organizations.routes.js";
+import { invitationsRoutes } from "./routes/invitations.routes.js";
+import { membersRoutes } from "./routes/members.routes.js";
 
 const app = new Hono<AppBindings>();
 
@@ -30,5 +34,9 @@ app.get("/", (c) => c.json({ name: "salary-management-api", status: "ok" }));
 
 app.route("/api", healthRoutes);
 app.route("/api", exampleRoutes);
+app.route("/api", webhooksRoutes);
+app.route("/api", organizationsRoutes);
+app.route("/api", invitationsRoutes);
+app.route("/api", membersRoutes);
 
 export default app;
