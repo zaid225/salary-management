@@ -1,9 +1,12 @@
 import type { Context, Next } from "hono";
 import { verifyToken } from "@clerk/backend";
 import { and, eq } from "drizzle-orm";
+import { z } from "zod/v4";
 import type { AppBindings } from "../lib/context.js";
 import { getDb } from "../models/db.js";
 import { memberships } from "../models/schema.js";
+
+const UuidSchema = z.uuid();
 
 // Guards every mutating route unless it's an explicit public
 // webhook/ingestion endpoint (api-security.md rule 2). Graceful
@@ -55,6 +58,9 @@ export async function resolveOrg(c: Context<AppBindings>, next: Next): Promise<R
   const orgId = headerOrgId ?? paramOrgId;
   if (!orgId) {
     return c.json({ error: { message: "X-Org-Id header required", statusCode: 400 } }, 400);
+  }
+  if (!UuidSchema.safeParse(orgId).success) {
+    return c.json({ error: { message: "X-Org-Id must be a valid UUID", statusCode: 400 } }, 400);
   }
 
   const conn = getDb(c.env);

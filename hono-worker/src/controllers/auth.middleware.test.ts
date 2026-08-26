@@ -51,6 +51,21 @@ describe("resolveOrg + requireRole", () => {
     expect(res.status).toBe(400);
   });
 
+  it("400s when X-Org-Id is not a valid UUID", async () => {
+    const app = buildTestApp();
+    const res = await app.fetch(
+      new Request("http://test/test", {
+        headers: { "x-test-user": "user_admin", "X-Org-Id": "not-a-uuid" },
+      }),
+      testEnv(), testExecutionCtx(),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toEqual({
+      error: { message: "X-Org-Id must be a valid UUID", statusCode: 400 },
+    });
+  });
+
   it("403s for a user with no active membership in that org", async () => {
     const org = await seedOrgWithMembers();
     const app = buildTestApp();

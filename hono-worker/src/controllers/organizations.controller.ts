@@ -21,9 +21,26 @@ export async function createOrganization(c: Context<AppBindings, string, CreateO
     let slug = base;
     let org: typeof organizations.$inferSelect | undefined;
 
+    // Org insert + admin membership insert must commit together (or not at
+    // all) - a crash between them would leave an orphaned org with no admin,
+    // which is unrecoverable through the API (design spec §5.6, no
+    // super-admin escape hatch). Retry the whole transaction on slug
+    // collision so a failed attempt never leaves a partial org committed.
     for (let attempt = 0; attempt < 5 && !org; attempt++) {
       try {
-        [org] = await conn.db.insert(organizations).values({ name, slug }).returning();
+        await conn.db.transaction(async (tx) => {
+          const [insertedOrg] = await tx.insert(organizations).values({ name, slug }).returning();
+          if (!insertedOrg) throw new Error("organization insert did not return a row");
+
+          await tx.insert(memberships).values({
+            organizationId: insertedOrg.id,
+            clerkUserId: userId,
+            role: "admin",
+            status: "active",
+          });
+
+          org = insertedOrg;
+        });
       } catch {
         slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
       }
@@ -34,13 +51,6 @@ export async function createOrganization(c: Context<AppBindings, string, CreateO
         500,
       );
     }
-
-    await conn.db.insert(memberships).values({
-      organizationId: org.id,
-      clerkUserId: userId,
-      role: "admin",
-      status: "active",
-    });
 
     return c.json({ organization: org }, 201);
   } finally {
