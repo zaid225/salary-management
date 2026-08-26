@@ -8,5 +8,10 @@ export type CloudflareBindings = Env & {
   HYPERDRIVE?: Hyperdrive;
 };
 
-export type Variables = { reqId: string; userId?: string };
+export type Variables = {
+  reqId: string;
+  userId?: string;
+  orgId?: string;
+  orgRole?: "admin" | "viewer";
+};
 export type AppBindings = { Bindings: CloudflareBindings; Variables: Variables };

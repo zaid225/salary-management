@@ -13,6 +13,7 @@ const EnvSchema = z.object({
   MONGODB_DATA_SOURCE: z.string().default(""),
   CLERK_SECRET_KEY: z.string().default(""),
   CLERK_PUBLISHABLE_KEY: z.string().default(""),
+  CLERK_WEBHOOK_SECRET: z.string().default(""),
   OPENROUTER_API_KEY: z.string().default(""),
   UNSPLASH_ACCESS_KEY: z.string().default(""),
   PARALLEL_API_KEY: z.string().default(""),
@@ -20,6 +21,9 @@ const EnvSchema = z.object({
   UPSTASH_REDIS_REST_TOKEN: z.string().default(""),
   QSTASH_TOKEN: z.string().default(""),
   ALLOWED_ORIGIN: z.string().default(""),
+  POSTMARK_SERVER_TOKEN: z.string().default(""),
+  POSTMARK_FROM_EMAIL: z.string().default(""),
+  SEED_ADMIN_CLERK_USER_ID: z.string().default(""),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

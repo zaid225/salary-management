@@ -15,7 +15,9 @@ afterAll(async () => {
 
 describe("schema", () => {
   it("persists an organization and its membership", async () => {
-    const [org] = await db.insert(organizations).values({ name: "ACME Corp", slug: "acme" }).returning();
+    const orgs = await db.insert(organizations).values({ name: "ACME Corp", slug: "acme" }).returning();
+    const org = orgs[0];
+    if (!org) throw new Error("Failed to create organization");
 
     await db.insert(memberships).values({
       organizationId: org.id,
@@ -26,6 +28,6 @@ describe("schema", () => {
 
     const rows = await db.select().from(memberships).where(eq(memberships.organizationId, org.id));
     expect(rows).toHaveLength(1);
-    expect(rows[0].role).toBe("admin");
+    expect(rows[0]?.role).toBe("admin");
   });
 });
