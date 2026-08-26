@@ -118,7 +118,7 @@ export const memberships = pgTable("memberships", {
   organizationId: uuid("organization_id").notNull().references(() => organizations.id),
   clerkUserId: varchar("clerk_user_id", { length: 255 }).notNull(),
   role: varchar("role", { length: 20 }).notNull(),             // admin | viewer
-  status: varchar("status", { length: 20 }).notNull().default("active"), // invited | active
+  status: varchar("status", { length: 20 }).notNull().default("active"), // active | removed
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   unique("uq_memberships_org_user").on(t.organizationId, t.clerkUserId),
@@ -224,10 +224,25 @@ helper, not hand-written per route, so a route can't accidentally omit it.
 ## 4. API surface
 
 All routes under `/api`, zod-validated body/query/params, all list
-endpoints paginated (`limit`/`cursor`), errors in the shared `{ error: {
-message, statusCode } }` shape. Every route below except the org-management
-ones runs behind `requireAuth` + `resolveOrg` (§5) — `orgId`/`orgRole` come
-from the resolved membership, never from client input.
+endpoints paginated (`limit`/`cursor`, default `limit=25`, max `100` —
+requests above the max are clamped, not rejected), errors in the shared
+`{ error: { message, statusCode } }` shape. Every route below except the
+org-management ones runs behind `requireAuth` + `resolveOrg` (§5) —
+`orgId`/`orgRole` come from the resolved membership, never from client
+input.
+
+**CORS:** in production, `cors.plugin`/Hono's `cors()` middleware allows
+only the deployed frontend's exact origin (`FRONTEND_URL` env var) — never
+`origin: true` — per this repo's own `api-security.md` rule 7.
+
+**Rate limiting** (`@upstash/ratelimit`, already a `hono-worker` dependency,
+degrades to no-op if Upstash env vars are unset — env-vars.md rule 4):
+`POST /organizations/:orgId/invitations` and `POST /employees/import` get a
+per-org sliding-window limit (invites: cheap to spam and each one is a live
+token; import: the heaviest single write this API does) — everything else
+is normal authenticated CRUD with no external cost, so left unlimited per
+`api-security.md` rule 1's own "only what costs money or is publicly
+writable" scope.
 
 **Identity sync** (public, signature-verified — not user-authenticated):
 
@@ -245,7 +260,7 @@ from the resolved membership, never from client input.
 | POST | /organizations/:orgId/invitations | resolveOrg + admin | Create an invitation (email, role); returns the shareable accept link |
 | POST | /invitations/:token/accept | requireAuth | Accept an invite → creates/activates a membership for the current user |
 | PATCH | /organizations/:orgId/members/:membershipId | resolveOrg + admin | Change a member's role |
-| DELETE | /organizations/:orgId/members/:membershipId | resolveOrg + admin | Remove a member |
+| DELETE | /organizations/:orgId/members/:membershipId | resolveOrg + admin | Soft-remove a member (status → removed, never a hard row delete — consistent with employees' soft-delete and keeps audit_log's actor references valid) |
 
 **Salary management** (all require `resolveOrg`; write routes require `admin`):
 
@@ -306,12 +321,33 @@ Organization primitive.
 4. `GET /organizations` returns the orgs they belong to. Zero → onboarding
    gate: *create an organization* (`POST /organizations`, caller becomes its
    `admin` membership) or *redeem an invite link*.
-5. An `admin` invites by email (`POST /organizations/:orgId/invitations`) →
-   an `invitations` row with a random token and a `pending` status is
-   created; the response includes a `/accept-invite/:token` link to share.
-   Visiting it while signed in and calling `POST /invitations/:token/accept`
-   creates (or activates) that user's `memberships` row for that org.
-6. The frontend keeps the user's active `organizationId` (picked from a
+5. An `admin` invites by email (`POST /organizations/:orgId/invitations`).
+   **Idempotent, not error-on-duplicate:** if a `pending` invite already
+   exists for that `(org, email)` (the unique partial index from §3), the
+   route returns the *existing* invite's link instead of a 409 — a
+   double-click or retry re-shares the same link rather than failing
+   (idempotency.md rule 3's upsert-over-insert principle). The created row
+   gets a `pending` status, a random token, and `expiresAt` (7 days out).
+   `POST /invitations/:token/accept`:
+   - 404 if the token doesn't exist, 410 Gone if `status != 'pending'` or
+     `expiresAt` has passed (an already-accepted or expired token is not a
+     valid invite, and both are distinguishable from "never existed").
+   - otherwise creates (or reactivates, if this user had left) a
+     `memberships` row for the token's org/role and flips the invitation to
+     `accepted` in the same transaction — this makes accept itself
+     idempotent: a retried accept call on an already-accepted invite still
+     hits the "not pending" branch and returns cleanly rather than double-
+     creating a membership (the `(organization_id, clerk_user_id)` unique
+     constraint would also catch it, but the explicit status check gives a
+     clean 410 instead of a raw constraint-violation 500).
+6. **An organization can never be left with zero admins.** `PATCH`/`DELETE`
+   on a membership checks the org's current admin count first; demoting or
+   removing the last remaining `admin` is rejected with 409 ("organization
+   must have at least one admin"). Without this check, a single mis-click
+   permanently locks an organization's data behind a role no one holds —
+   there's no super-admin escape hatch in this design, so the guard has to
+   be structural, not a support workaround.
+7. The frontend keeps the user's active `organizationId` (picked from a
    simple org switcher) in `localStorage` and sends it as an `X-Org-Id`
    header on every API call.
 
@@ -415,12 +451,13 @@ written exactly once and can never drift between client and server.
 Pages.
 
 **Theming:** shadcn/ui in CSS-variable mode (Tailwind v4 `@theme inline`),
-styled with a specific tweakcn theme — a slate-based neutral light palette
-and a dark palette built around a sky-blue `--primary` (`#38bdf8`), radius
-`0.375rem`, `Inter`/`Georgia`/`JetBrains Mono` font stack. The exact file
-below is the theme, saved verbatim to `frontend/src/styles/globals.css` and
-imported once at the app root — no hand-tuned Tailwind config colors, no
-per-component overrides:
+styled with a specific tweakcn theme — a near-white light palette (`--radius:
+0.125rem`, tighter/sharper corners than the default), a true-black dark
+palette with a blue `--chart-1`/`--sidebar-primary` accent, and a slight
+negative letter-spacing (`--tracking-normal: -0.015em`) applied at the
+`body` level. The exact file below is the theme, saved verbatim to
+`frontend/src/styles/globals.css` and imported once at the app root — no
+hand-tuned Tailwind config colors, no per-component overrides:
 
 ```css
 @import "tailwindcss";
@@ -428,97 +465,97 @@ per-component overrides:
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: #f8fafc;
+  --background: #ffffff;
   --foreground: #0f172a;
   --card: #ffffff;
   --card-foreground: #0f172a;
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #1e293b;
+  --popover-foreground: #020617;
+  --primary: #334155;
   --primary-foreground: #f8fafc;
   --secondary: #f1f5f9;
   --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
+  --muted: #f8fafc;
   --muted-foreground: #64748b;
   --accent: #f1f5f9;
   --accent-foreground: #0f172a;
-  --destructive: #ef4444;
-  --destructive-foreground: #f8fafc;
-  --border: #f1f5f9;
-  --input: #f1f5f9;
+  --destructive: #e11d48;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e1e7ef;
   --ring: #1e293b;
-  --chart-1: #1e293b;
-  --chart-2: #334155;
-  --chart-3: #475569;
-  --chart-4: #64748b;
-  --chart-5: #94a3b8;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #0f172a;
-  --sidebar-primary: #1e293b;
-  --sidebar-primary-foreground: #f8fafc;
+  --chart-1: #334155;
+  --chart-2: #10b981;
+  --chart-3: #f59e0b;
+  --chart-4: #6366f1;
+  --chart-5: #64748b;
+  --sidebar: #f8fafc;
+  --sidebar-foreground: #334155;
+  --sidebar-primary: #0f172a;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f1f5f9;
   --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #f1f5f9;
+  --sidebar-border: #e2e8f0;
   --sidebar-ring: #1e293b;
   --font-sans: "Inter", system-ui, sans-serif;
   --font-serif: "Georgia", serif;
   --font-mono: "JetBrains Mono", monospace;
-  --radius: 0.375rem;
+  --radius: 0.125rem;
   --shadow-x: 0px;
   --shadow-y: 0px;
-  --shadow-blur: 1px;
+  --shadow-blur: 0px;
   --shadow-spread: 0px;
-  --shadow-opacity: 0.02;
+  --shadow-opacity: 0;
   --shadow-color: #000000;
-  --shadow-2xs: 0px 0px 1px 0px hsl(0 0% 0% / 0.01);
-  --shadow-xs: 0px 0px 1px 0px hsl(0 0% 0% / 0.01);
-  --shadow-sm: 0px 0px 1px 0px hsl(0 0% 0% / 0.02), 0px 1px 2px -1px hsl(0 0% 0% / 0.02);
-  --shadow: 0px 0px 1px 0px hsl(0 0% 0% / 0.02), 0px 1px 2px -1px hsl(0 0% 0% / 0.02);
-  --shadow-md: 0px 0px 1px 0px hsl(0 0% 0% / 0.02), 0px 2px 4px -1px hsl(0 0% 0% / 0.02);
-  --shadow-lg: 0px 0px 1px 0px hsl(0 0% 0% / 0.02), 0px 4px 6px -1px hsl(0 0% 0% / 0.02);
-  --shadow-xl: 0px 0px 1px 0px hsl(0 0% 0% / 0.02), 0px 8px 10px -1px hsl(0 0% 0% / 0.02);
-  --shadow-2xl: 0px 0px 1px 0px hsl(0 0% 0% / 0.05);
-  --tracking-normal: 0em;
+  --shadow-2xs: 0px 0px 0px 0px hsl(0 0% 0% / 0.00);
+  --shadow-xs: 0px 0px 0px 0px hsl(0 0% 0% / 0.00);
+  --shadow-sm: 0px 0px 0px 0px hsl(0 0% 0% / 0.00), 0px 1px 2px -1px hsl(0 0% 0% / 0.00);
+  --shadow: 0px 0px 0px 0px hsl(0 0% 0% / 0.00), 0px 1px 2px -1px hsl(0 0% 0% / 0.00);
+  --shadow-md: 0px 0px 0px 0px hsl(0 0% 0% / 0.00), 0px 2px 4px -1px hsl(0 0% 0% / 0.00);
+  --shadow-lg: 0px 0px 0px 0px hsl(0 0% 0% / 0.00), 0px 4px 6px -1px hsl(0 0% 0% / 0.00);
+  --shadow-xl: 0px 0px 0px 0px hsl(0 0% 0% / 0.00), 0px 8px 10px -1px hsl(0 0% 0% / 0.00);
+  --shadow-2xl: 0px 0px 0px 0px hsl(0 0% 0% / 0.00);
+  --tracking-normal: -0.015em;
   --spacing: 0.25rem;
 }
 
 .dark {
   --background: #020617;
   --foreground: #f8fafc;
-  --card: #0a0f1e;
+  --card: #020617;
   --card-foreground: #f8fafc;
-  --popover: #0a0f1e;
+  --popover: #020617;
   --popover-foreground: #f8fafc;
-  --primary: #38bdf8;
-  --primary-foreground: #0c4a6e;
-  --secondary: #0f172a;
+  --primary: #f8fafc;
+  --primary-foreground: #0f172a;
+  --secondary: #1e293b;
   --secondary-foreground: #f8fafc;
   --muted: #0f172a;
   --muted-foreground: #94a3b8;
-  --accent: #0f172a;
+  --accent: #1e293b;
   --accent-foreground: #f8fafc;
-  --destructive: #7f1d1d;
+  --destructive: #991b1b;
   --destructive-foreground: #f8fafc;
-  --border: #0f172a;
-  --input: #0f172a;
-  --ring: #38bdf8;
-  --chart-1: #38bdf8;
-  --chart-2: #0ea5e9;
-  --chart-3: #0284c7;
-  --chart-4: #0369a1;
-  --chart-5: #075985;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #94a3b8;
+  --chart-1: #3b82f6;
+  --chart-2: #10b981;
+  --chart-3: #f59e0b;
+  --chart-4: #a855f7;
+  --chart-5: #64748b;
   --sidebar: #020617;
   --sidebar-foreground: #f1f5f9;
-  --sidebar-primary: #38bdf8;
+  --sidebar-primary: #3b82f6;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #0f172a;
+  --sidebar-accent: #1e293b;
   --sidebar-accent-foreground: #f1f5f9;
-  --sidebar-border: #0f172a;
-  --sidebar-ring: #38bdf8;
+  --sidebar-border: #1e293b;
+  --sidebar-ring: #3b82f6;
   --font-sans: "Inter", system-ui, sans-serif;
   --font-serif: "Georgia", serif;
   --font-mono: "JetBrains Mono", monospace;
-  --radius: 0.375rem;
+  --radius: 0.125rem;
   --shadow-x: 0px;
   --shadow-y: 0px;
   --shadow-blur: 0px;
@@ -586,6 +623,13 @@ per-component overrides:
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
+
+  --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
+  --tracking-tight: calc(var(--tracking-normal) - 0.025em);
+  --tracking-normal: var(--tracking-normal);
+  --tracking-wide: calc(var(--tracking-normal) + 0.025em);
+  --tracking-wider: calc(var(--tracking-normal) + 0.05em);
+  --tracking-widest: calc(var(--tracking-normal) + 0.1em);
 }
 
 @layer base {
@@ -594,6 +638,7 @@ per-component overrides:
   }
   body {
     @apply bg-background text-foreground;
+    letter-spacing: var(--tracking-normal);
   }
 }
 ```
@@ -707,7 +752,10 @@ Vitest, fast and deterministic — no network calls, no LLM.
   invite creation → accept → membership activation, and — the one that
   matters most for a multi-tenant system — that a member of org A gets 403
   (not org B's data) when calling org B's endpoints with org B's id and
-  their own valid session token.
+  their own valid session token. Also: re-inviting an already-pending email
+  returns the same invite rather than erroring; accepting an expired or
+  already-accepted token returns 410; removing/demoting an org's last
+  admin returns 409 and leaves the membership untouched.
 - **Frontend component tests:** Vitest + React Testing Library for the
   employee table (filtering/pagination), salary-history timeline, and CSV
   import dialog (success + per-row-error rendering). Form tests assert
@@ -725,6 +773,19 @@ Vitest, fast and deterministic — no network calls, no LLM.
 - Deployed URL + a short demo video are the assessment's stated readiness
   bar — captured as a follow-up step once the app is functional, not part of
   this spec's implementation.
+
+**Env vars** (all optional/defaulted per `env-vars.md` — a missing one
+degrades the affected feature, never crashes boot):
+
+| Var | Used by |
+|---|---|
+| `HYPERDRIVE` (binding) / `DATABASE_URL` | DB connection (Worker / seed+migrations respectively) |
+| `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | Auth verification, frontend Clerk client |
+| `CLERK_WEBHOOK_SECRET` | Svix signature check on `/webhooks/clerk` |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Frontend build-time |
+| `FRONTEND_URL` | CORS allow-list origin |
+| `UPSTASH_REDIS_REST_URL`/`TOKEN` | Rate limiting (invitations, CSV import) |
+| `SEED_ADMIN_CLERK_USER_ID` | `seed.ts` only |
 
 ## 11. Out-of-repo housekeeping
 
