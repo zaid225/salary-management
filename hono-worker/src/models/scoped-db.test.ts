@@ -14,8 +14,12 @@ afterAll(async () => {
 });
 
 async function seedTwoOrgs() {
-  const [orgA] = await db.insert(organizations).values({ name: "Org A", slug: "org-a" }).returning();
-  const [orgB] = await db.insert(organizations).values({ name: "Org B", slug: "org-b" }).returning();
+  const orgsA = await db.insert(organizations).values({ name: "Org A", slug: "org-a" }).returning();
+  const orgA = orgsA[0];
+  if (!orgA) throw new Error("Failed to create organization A");
+  const orgsB = await db.insert(organizations).values({ name: "Org B", slug: "org-b" }).returning();
+  const orgB = orgsB[0];
+  if (!orgB) throw new Error("Failed to create organization B");
 
   await db.insert(memberships).values([
     { organizationId: orgA.id, clerkUserId: "user_a1", role: "admin", status: "active" },
@@ -58,7 +62,9 @@ describe("scopedDb", () => {
 
     const invitesA = await scopedA.invitations.listPending();
     expect(invitesA).toHaveLength(1);
-    expect(invitesA[0].organizationId).toBe(orgA.id);
+    const inviteA = invitesA[0];
+    if (!inviteA) throw new Error("Expected a pending invitation");
+    expect(inviteA.organizationId).toBe(orgA.id);
 
     const scopedB = scopedDb(db, orgB.id);
     expect(await scopedB.memberships.listActive()).toHaveLength(1);

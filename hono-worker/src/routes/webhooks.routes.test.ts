@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { describe, it, expect, afterAll, beforeEach } from "vitest";
 import { createHmac } from "node:crypto";
 import { testDb, testEnv, testExecutionCtx, truncateAll } from "../../test-utils/db.js";
@@ -65,7 +66,9 @@ describe("POST /webhooks/clerk", () => {
     const res = await webhooksRoutes.fetch(req, testEnv({ CLERK_WEBHOOK_SECRET: SECRET }), testExecutionCtx());
     expect(res.status).toBe(200);
 
-    const [row] = await db.select().from(users).where(eq(users.clerkUserId, "user_new"));
+    const rows = await db.select().from(users).where(eq(users.clerkUserId, "user_new"));
+    const row = rows[0];
+    if (!row) throw new Error("Expected a users row");
     expect(row.email).toBe("new@example.com");
     expect(row.name).toBe("New User");
   });

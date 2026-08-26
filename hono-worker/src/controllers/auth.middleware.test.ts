@@ -30,7 +30,9 @@ function buildTestApp() {
 }
 
 async function seedOrgWithMembers() {
-  const [org] = await db.insert(organizations).values({ name: "ACME", slug: "acme" }).returning();
+  const orgs = await db.insert(organizations).values({ name: "ACME", slug: "acme" }).returning();
+  const org = orgs[0];
+  if (!org) throw new Error("Failed to create organization");
   await db.insert(memberships).values([
     { organizationId: org.id, clerkUserId: "user_admin", role: "admin", status: "active" },
     { organizationId: org.id, clerkUserId: "user_viewer", role: "viewer", status: "active" },
