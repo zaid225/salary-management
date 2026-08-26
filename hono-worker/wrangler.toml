@@ -1,0 +1,25 @@
+name = "swades-hackathon-worker"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[vars]
+NODE_ENV = "production"
+ALLOWED_ORIGIN = ""
+
+# Commented out on purpose: an unfilled placeholder id/localConnectionString
+# makes `wrangler dev`/`deploy` crash outright (Hyperdrive parses both
+# eagerly at boot) - the opposite of every other integration in this repo,
+# which boots clean and reports `configured: false` until set up
+# (env-vars.md rule 4). Uncomment once you've run:
+#   npx wrangler hyperdrive create swades-hackathon-db --connection-string="<DATABASE_URL>"
+# then paste the printed id below, and put your real Postgres URL in
+# localConnectionString (not committed - only used by local `wrangler dev`).
+# [[hyperdrive]]
+# binding = "HYPERDRIVE"
+# id = "<YOUR_HYPERDRIVE_ID>"
+# localConnectionString = "<YOUR_LOCAL_DATABASE_URL>"

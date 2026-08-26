@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.env
+.dev.vars
+worker-configuration.d.ts
+*.log
+drizzle/
