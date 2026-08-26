@@ -33,6 +33,9 @@ with two permission levels per organization — see §5.
 - An audit log of every salary/employee mutation (actor, before/after,
   timestamp) — compliance-flavored, expected of software handling
   compensation data.
+- Transactional email (Postmark) for the one message this system actually
+  needs to send: the invite-link email. No other notification/digest
+  emails — scoped to that single trigger.
 - **Custom multi-tenant organizations, built on our own tables — Clerk's
   Organization feature is off-limits.** Clerk provides identity only
   (credential storage, verification, session issuance), reached through a
@@ -55,10 +58,6 @@ with two permission levels per organization — see §5.
   people" deterministically and is fully testable; an LLM in that path adds
   non-determinism to a domain (compensation data) where a wrong answer is
   costly, for a capability nothing has explicitly requested.
-- *Transactional invite emails.* Invitations are real rows with real tokens,
-  but delivery is a copy/share-the-link flow, not an emailed message —
-  wiring a transactional email provider is a clean, isolated follow-up, not
-  required for the invite flow to function end-to-end.
 - *Org chart / performance reviews / benefits.* Adjacent HR features not
   implied by "salary management."
 - *Payments/subscriptions (e.g. Razorpay).* Multi-tenant doesn't imply
@@ -330,10 +329,21 @@ Organization primitive.
 5. An `admin` invites by email (`POST /organizations/:orgId/invitations`).
    **Idempotent, not error-on-duplicate:** if a `pending` invite already
    exists for that `(org, email)` (the unique partial index from §3), the
-   route returns the *existing* invite's link instead of a 409 — a
-   double-click or retry re-shares the same link rather than failing
+   route returns the *existing* invite's link (and does **not** re-send the
+   email — see below) instead of a 409 — a double-click or retry re-shares
+   the same link rather than failing or spamming the invitee's inbox
    (idempotency.md rule 3's upsert-over-insert principle). The created row
    gets a `pending` status, a random token, and `expiresAt` (7 days out).
+   On genuine creation (not the idempotent-replay branch), the route sends
+   one Postmark email (invite link + org name + inviter's name from
+   `users`) via Postmark's HTTP API, `AbortSignal.timeout`-bounded per
+   `scaling-resilience.md` rule 1. **Email delivery is fire-and-forget
+   relative to the response:** the invitation row is the source of truth
+   and already exists whether or not the email send succeeds, so a
+   Postmark outage degrades to "admin manually shares the link from the
+   response body" (§1's original fallback) rather than failing the whole
+   invite-creation request — `POSTMARK_SERVER_TOKEN` unset also degrades
+   the same way, per `env-vars.md` rule 4.
    `POST /invitations/:token/accept`:
    - 404 if the token doesn't exist, 410 Gone if `status != 'pending'` or
      `expiresAt` has passed (an already-accepted or expired token is not a
@@ -817,9 +827,14 @@ Vitest, fast and deterministic — no network calls, no LLM.
   matters most for a multi-tenant system — that a member of org A gets 403
   (not org B's data) when calling org B's endpoints with org B's id and
   their own valid session token. Also: re-inviting an already-pending email
-  returns the same invite rather than erroring; accepting an expired or
+  returns the same invite rather than erroring (and, with Postmark mocked,
+  asserts no second email is sent on that replay); accepting an expired or
   already-accepted token returns 410; removing/demoting an org's last
-  admin returns 409 and leaves the membership untouched.
+  admin returns 409 and leaves the membership untouched; a mocked Postmark
+  failure on invite creation still returns 200 with the invite (email is
+  fire-and-forget, not the request's success condition) and logs the
+  failure via `request.log`/`app.log`, never swallowed silently
+  (`error-handling-logging.md` rule 6).
 - **Frontend component tests:** Vitest + React Testing Library for the
   employee table (filtering/pagination), salary-history timeline, and CSV
   import dialog (success + per-row-error rendering). Form tests assert
@@ -853,6 +868,7 @@ degrades the affected feature, never crashes boot):
 | `VITE_CLERK_PUBLISHABLE_KEY` | Frontend build-time |
 | `FRONTEND_URL` | CORS allow-list origin |
 | `UPSTASH_REDIS_REST_URL`/`TOKEN` | Rate limiting (invitations, CSV import) |
+| `POSTMARK_SERVER_TOKEN` | Invite-link email; unset → invite still works, just not emailed |
 | `SEED_ADMIN_CLERK_USER_ID` | `seed.ts` only |
 
 ## 12. Out-of-repo housekeeping
