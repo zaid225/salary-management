@@ -292,7 +292,83 @@ domain-table query, so route handlers can't forget it — the alternative
 (hand-writing the filter in every handler) is exactly the kind of mistake
 that produces cross-tenant data leaks under time pressure.
 
-## 6. Frontend
+**Middleware shape** (`hono-worker/src/controllers/auth.middleware.ts`),
+composed per route rather than globally, so read routes stay two-deep and
+write routes three-deep:
+
+```ts
+// requireAuth (existing) -> sets c.set("userId", claims.sub)
+
+export async function resolveOrg(c: Context<AppBindings>, next: Next) {
+  const orgId = c.req.header("X-Org-Id");
+  if (!orgId) return c.json({ error: { message: "X-Org-Id header required", statusCode: 400 } }, 400);
+
+  const db = getDb(c.env);
+  if (!db) return c.json({ error: { message: "Database not configured", statusCode: 503 } }, 503);
+
+  const [membership] = await db.db.select().from(memberships).where(
+    and(
+      eq(memberships.organizationId, orgId),
+      eq(memberships.clerkUserId, c.get("userId")),
+      eq(memberships.status, "active"),
+    ),
+  ).limit(1);
+
+  if (!membership) {
+    return c.json({ error: { message: "Not a member of this organization", statusCode: 403 } }, 403);
+  }
+  c.set("orgId", orgId);
+  c.set("orgRole", membership.role); // "admin" | "viewer"
+  await next();
+}
+
+export function requireRole(role: "admin") {
+  return async (c: Context<AppBindings>, next: Next) => {
+    if (c.get("orgRole") !== role) {
+      return c.json({ error: { message: "Forbidden", statusCode: 403 } }, 403);
+    }
+    await next();
+  };
+}
+
+// Route composition:
+// app.get("/employees", requireAuth, resolveOrg, listEmployees)
+// app.post("/employees", requireAuth, resolveOrg, requireRole("admin"), createEmployee)
+```
+
+`resolveOrg` is one indexed lookup (`idx_memberships_user`, plus the
+`(organization_id, clerk_user_id)` unique constraint doubling as a lookup
+index) — negligible latency cost per request for the isolation guarantee it
+buys.
+
+## 6. Validation strategy (shared zod schemas)
+
+One zod schema per resource, defined once in `hono-worker/src/schemas/*.ts`
+(e.g. `employee.schema.ts` exporting `CreateEmployeeSchema`,
+`UpdateEmployeeSchema`, `AddSalaryRecordSchema`, `InviteMemberSchema`) and
+re-exported for the frontend to import directly — the repo stays a single
+TypeScript project boundary-wise (Worker + Vite app both consume the same
+`zod/v4` schema module), so a validation rule (e.g. "salary amount must be a
+positive number with at most 2 decimal places", "country must be one of
+these ISO codes", "employee_number matches `^[A-Z]{2,4}-\d{4,6}$`") is
+written exactly once and can never drift between client and server.
+
+- **Backend:** `@hono/zod-validator`'s `zValidator("json", CreateEmployeeSchema)`
+  on the route — server-side validation is the actual security boundary
+  (validation.md rule 1); this is non-negotiable regardless of what the
+  frontend does.
+- **Frontend:** `react-hook-form` + `@hookform/resolvers/zod`, passing the
+  *same* schema straight into `zodResolver(CreateEmployeeSchema)` — field-
+  level errors (`formState.errors.email`, etc.) render inline under each
+  input as the user types/blurs, so a bad row is caught before the request
+  ever leaves the browser, with the backend re-validating identically as
+  the authoritative check.
+- **CSV import** reuses the identical per-row schema (`CreateEmployeeSchema
+  .safeParse(row)`), so a bulk-imported row is held to exactly the same
+  rules as one entered by hand in the form — one validation source, three
+  entry points (form, CSV, API-direct).
+
+## 7. Frontend
 
 `frontend/` — React + Vite + Tailwind + shadcn/ui, deployed to Cloudflare
 Pages.
@@ -326,12 +402,18 @@ without touching component code.
   form visible only to `admin`.
 - Audit log — paginated table of changes.
 
+Every form (sign-in/sign-up, create org, invite member, employee create/
+edit, add salary record) is a `react-hook-form` instance with
+`zodResolver(<ThatResource'sSchema>)` from §6 — consistent inline
+field-level errors everywhere, no hand-rolled validation logic in a single
+component.
+
 The `viewer` role hides every mutating control (buttons, forms, the Members
 page's invite/edit actions) client-side *and* the API rejects the write
 server-side regardless — client-side hiding is UX, not the security
 boundary.
 
-## 7. Seeding
+## 8. Seeding
 
 `hono-worker/scripts/seed.ts`, run with `tsx` against `DATABASE_URL`
 directly (same pattern `drizzle-kit` already uses, bypassing Hyperdrive —
@@ -350,7 +432,48 @@ passed as a script argument/env var (the developer's own Clerk account,
 so the seeded orgs are immediately usable after sign-in), and seeds
 `fx_rates` with a fixed snapshot (global, shared by both orgs).
 
-## 8. Testing
+**Shape** (`hono-worker/scripts/seed.ts`):
+
+```ts
+const client = postgres(process.env.DATABASE_URL!);
+const db = drizzle(client, { schema });
+
+async function seedOrg(name: string, slug: string, employeeCount: number, adminClerkUserId: string) {
+  const [org] = await db.insert(organizations).values({ name, slug }).returning();
+
+  await db.insert(memberships).values({
+    organizationId: org.id,
+    clerkUserId: adminClerkUserId,
+    role: "admin",
+    status: "active",
+  });
+
+  for (const batch of chunk(generateEmployees(org.id, employeeCount), 500)) {
+    // Each generated employee ships with 1-3 salaryRecords already
+    // attached (hire + 0-2 raises), inserted in the same transaction
+    // per batch so partial seed runs never leave an employee with zero
+    // salary history.
+    await db.transaction(async (tx) => {
+      const inserted = await tx.insert(employees).values(batch.map((b) => b.employee)).returning();
+      await tx.insert(salaryRecords).values(
+        inserted.flatMap((e, i) => batch[i].salaryRecords.map((r) => ({ ...r, employeeId: e.id, organizationId: org.id }))),
+      );
+    });
+  }
+}
+
+await db.insert(fxRates).values(FX_SNAPSHOT); // fixed, checked into the script
+await seedOrg("ACME Corp", "acme", 10_000, process.env.SEED_ADMIN_CLERK_USER_ID!);
+await seedOrg("Globex Inc", "globex", 25, process.env.SEED_ADMIN_CLERK_USER_ID!);
+await client.end();
+```
+
+`generateEmployees` deterministically distributes employees across ~8
+countries/currencies with country-appropriate salary bands (seeded RNG, not
+`Math.random()`, so re-running produces the same dataset — useful for
+tests and for reproducing a specific demo state).
+
+## 9. Testing
 
 Vitest, fast and deterministic — no network calls, no LLM.
 
@@ -365,9 +488,13 @@ Vitest, fast and deterministic — no network calls, no LLM.
   their own valid session token.
 - **Frontend component tests:** Vitest + React Testing Library for the
   employee table (filtering/pagination), salary-history timeline, and CSV
-  import dialog (success + per-row-error rendering).
+  import dialog (success + per-row-error rendering). Form tests assert
+  that an invalid field (e.g. negative salary, malformed email) renders its
+  `zodResolver`-produced error and blocks submit — same schema as the
+  backend test for that resource, so the two suites are provably checking
+  the same rule.
 
-## 9. Deployment
+## 10. Deployment
 
 - `hono-worker` → `wrangler deploy`, `HYPERDRIVE` bound to the Supabase
   Postgres connection string, `CLERK_SECRET_KEY` set as a secret.
@@ -377,7 +504,7 @@ Vitest, fast and deterministic — no network calls, no LLM.
   bar — captured as a follow-up step once the app is functional, not part of
   this spec's implementation.
 
-## 10. Out-of-repo housekeeping
+## 11. Out-of-repo housekeeping
 
 - Delete `fastify-api/` (superseded scaffold, unused by this feature).
 - The old `sessions`/`chunks` schema in `hono-worker/src/models/schema.ts`
