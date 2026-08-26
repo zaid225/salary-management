@@ -40,3 +40,38 @@ export function rateLimitByIp(limit: number, windowSeconds: number) {
     await next();
   };
 }
+
+// Same dual-mode/degrade contract as rateLimitByIp, keyed by the resolved
+// organization instead of the caller's IP - protects a per-org resource
+// (invite spam, CSV import cost) rather than a per-caller one.
+export function rateLimitByOrg(limit: number, windowSeconds: number) {
+  return async (c: Context<AppBindings>, next: Next): Promise<Response | void> => {
+    const redis = getRedis(c.env);
+    if (!redis) {
+      await next();
+      return;
+    }
+
+    const orgId = c.get("orgId");
+    if (!orgId) {
+      await next();
+      return;
+    }
+
+    const ratelimit = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(limit, `${windowSeconds} s`),
+    });
+
+    try {
+      const { success } = await ratelimit.limit(orgId);
+      if (!success) {
+        return c.json({ error: { message: "Too many requests", statusCode: 429 } }, 429);
+      }
+    } catch (err) {
+      console.error(JSON.stringify({ level: "warn", msg: "rate limit check skipped", err: String(err) }));
+    }
+
+    await next();
+  };
+}
