@@ -88,6 +88,20 @@ old chunking-pipeline `sessions`/`chunks` tables from the earlier hackathon
 scenario, which are unused by this feature.
 
 ```ts
+// --- Local mirror of Clerk identity, kept in sync via webhook ---
+// Clerk stays the source of truth for auth; this table exists so member
+// lists/audit-log entries can show a name/email/avatar without an
+// out-of-band Clerk API call on every request.
+
+export const users = pgTable("users", {
+  clerkUserId: varchar("clerk_user_id", { length: 255 }).primaryKey(),
+  email: varchar("email", { length: 255 }).notNull(),
+  name: varchar("name", { length: 200 }),
+  avatarUrl: text("avatar_url"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // --- Organizations, membership, invitations (custom, not Clerk Orgs) ---
 
 export const organizations = pgTable("organizations", {
@@ -215,6 +229,12 @@ message, statusCode } }` shape. Every route below except the org-management
 ones runs behind `requireAuth` + `resolveOrg` (§5) — `orgId`/`orgRole` come
 from the resolved membership, never from client input.
 
+**Identity sync** (public, signature-verified — not user-authenticated):
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | /webhooks/clerk | Svix signature | Upsert `users` row on `user.created`/`user.updated` |
+
 **Organizations & membership** (no `X-Org-Id` needed except where noted):
 
 | Method | Path | Auth | Purpose |
@@ -256,21 +276,42 @@ verification. **Organizations, membership, and roles are entirely our own**
 Organization primitive.
 
 **Flow:**
-1. User signs up/in through a **custom-built UI** (our own form components —
-   email/password + fields, not Clerk's hosted `<SignIn/>`/`<SignUp/>`),
-   wired to Clerk's headless client (`@clerk/clerk-react`'s `useSignIn`/
-   `useSignUp` hooks driving `signIn.create`/`signUp.create` and the
-   verification-code step) so the visual design stays entirely ours while
-   Clerk still owns credential storage, verification, and session issuance.
-2. `GET /organizations` returns the orgs they belong to. Zero → onboarding
+1. User signs up/in through a **custom-built UI** — two methods, both
+   driven by Clerk's headless client, never Clerk's hosted components:
+   - *Email:* our own form (email/password + name fields), wired to
+     `useSignIn`/`useSignUp`'s `signIn.create`/`signUp.create` and the
+     email verification-code step.
+   - *Google:* a "Continue with Google" button we build (shadcn `Button`,
+     our icon/label) that calls `signIn.authenticateWithRedirect({
+     strategy: "oauth_google", redirectUrl: "/sso-callback",
+     redirectUrlComplete: "/dashboard" })` — Clerk handles the Google OAuth
+     handshake itself (required, cannot be reimplemented), but every pixel
+     the user sees before and after the redirect is still ours; `/sso-
+     callback` is our own thin route that finishes the handshake via
+     `useAuthCallback`/`handleRedirectCallback` and forwards on.
+2. **On successful auth (either method), the app queries `GET
+   /organizations`** and redirects: zero orgs → the onboarding gate
+   (create org / redeem invite link); one or more → straight to
+   `/dashboard` for the first (or last-used, from `localStorage`) org. This
+   redirect is the one required outcome of a successful sign-in — a user
+   never lands back on the sign-in page or a blank shell after
+   authenticating.
+3. Whenever Clerk fires `user.created` or `user.updated` (covers both
+   email and Google sign-up, since Google-sourced name/avatar/email arrive
+   through the same webhook event), `POST /webhooks/clerk` verifies the
+   Svix signature header (api-security.md rule 6 — an unverified webhook is
+   an open write endpoint) and upserts the `users` row — this is the
+   "proper data storage" for identity: name/email/avatar live in our DB,
+   not re-fetched from Clerk's API on every member-list render.
+4. `GET /organizations` returns the orgs they belong to. Zero → onboarding
    gate: *create an organization* (`POST /organizations`, caller becomes its
    `admin` membership) or *redeem an invite link*.
-3. An `admin` invites by email (`POST /organizations/:orgId/invitations`) →
+5. An `admin` invites by email (`POST /organizations/:orgId/invitations`) →
    an `invitations` row with a random token and a `pending` status is
    created; the response includes a `/accept-invite/:token` link to share.
    Visiting it while signed in and calling `POST /invitations/:token/accept`
    creates (or activates) that user's `memberships` row for that org.
-4. The frontend keeps the user's active `organizationId` (picked from a
+6. The frontend keeps the user's active `organizationId` (picked from a
    simple org switcher) in `localStorage` and sends it as an `X-Org-Id`
    header on every API call.
 
@@ -373,19 +414,200 @@ written exactly once and can never drift between client and server.
 `frontend/` — React + Vite + Tailwind + shadcn/ui, deployed to Cloudflare
 Pages.
 
-**Theming:** shadcn/ui in CSS-variable mode, styled with a **tweakcn**
-theme — a `globals.css` with the standard shadcn CSS-variable set
-(`--background`, `--primary`, `--radius`, etc. for both light and dark)
-generated from tweakcn.com and dropped in as-is, rather than hand-tuning
-Tailwind config colors. Keeps the visual system consistent and swappable
-without touching component code.
+**Theming:** shadcn/ui in CSS-variable mode (Tailwind v4 `@theme inline`),
+styled with a specific tweakcn theme — a slate-based neutral light palette
+and a dark palette built around a sky-blue `--primary` (`#38bdf8`), radius
+`0.375rem`, `Inter`/`Georgia`/`JetBrains Mono` font stack. The exact file
+below is the theme, saved verbatim to `frontend/src/styles/globals.css` and
+imported once at the app root — no hand-tuned Tailwind config colors, no
+per-component overrides:
+
+```css
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #1e293b;
+  --primary-foreground: #f8fafc;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #f8fafc;
+  --border: #f1f5f9;
+  --input: #f1f5f9;
+  --ring: #1e293b;
+  --chart-1: #1e293b;
+  --chart-2: #334155;
+  --chart-3: #475569;
+  --chart-4: #64748b;
+  --chart-5: #94a3b8;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #1e293b;
+  --sidebar-primary-foreground: #f8fafc;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #f1f5f9;
+  --sidebar-ring: #1e293b;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-serif: "Georgia", serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --radius: 0.375rem;
+  --shadow-x: 0px;
+  --shadow-y: 0px;
+  --shadow-blur: 1px;
+  --shadow-spread: 0px;
+  --shadow-opacity: 0.02;
+  --shadow-color: #000000;
+  --shadow-2xs: 0px 0px 1px 0px hsl(0 0% 0% / 0.01);
+  --shadow-xs: 0px 0px 1px 0px hsl(0 0% 0% / 0.01);
+  --shadow-sm: 0px 0px 1px 0px hsl(0 0% 0% / 0.02), 0px 1px 2px -1px hsl(0 0% 0% / 0.02);
+  --shadow: 0px 0px 1px 0px hsl(0 0% 0% / 0.02), 0px 1px 2px -1px hsl(0 0% 0% / 0.02);
+  --shadow-md: 0px 0px 1px 0px hsl(0 0% 0% / 0.02), 0px 2px 4px -1px hsl(0 0% 0% / 0.02);
+  --shadow-lg: 0px 0px 1px 0px hsl(0 0% 0% / 0.02), 0px 4px 6px -1px hsl(0 0% 0% / 0.02);
+  --shadow-xl: 0px 0px 1px 0px hsl(0 0% 0% / 0.02), 0px 8px 10px -1px hsl(0 0% 0% / 0.02);
+  --shadow-2xl: 0px 0px 1px 0px hsl(0 0% 0% / 0.05);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+}
+
+.dark {
+  --background: #020617;
+  --foreground: #f8fafc;
+  --card: #0a0f1e;
+  --card-foreground: #f8fafc;
+  --popover: #0a0f1e;
+  --popover-foreground: #f8fafc;
+  --primary: #38bdf8;
+  --primary-foreground: #0c4a6e;
+  --secondary: #0f172a;
+  --secondary-foreground: #f8fafc;
+  --muted: #0f172a;
+  --muted-foreground: #94a3b8;
+  --accent: #0f172a;
+  --accent-foreground: #f8fafc;
+  --destructive: #7f1d1d;
+  --destructive-foreground: #f8fafc;
+  --border: #0f172a;
+  --input: #0f172a;
+  --ring: #38bdf8;
+  --chart-1: #38bdf8;
+  --chart-2: #0ea5e9;
+  --chart-3: #0284c7;
+  --chart-4: #0369a1;
+  --chart-5: #075985;
+  --sidebar: #020617;
+  --sidebar-foreground: #f1f5f9;
+  --sidebar-primary: #38bdf8;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #0f172a;
+  --sidebar-accent-foreground: #f1f5f9;
+  --sidebar-border: #0f172a;
+  --sidebar-ring: #38bdf8;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-serif: "Georgia", serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --radius: 0.375rem;
+  --shadow-x: 0px;
+  --shadow-y: 0px;
+  --shadow-blur: 0px;
+  --shadow-spread: 0px;
+  --shadow-opacity: 0;
+  --shadow-color: #000000;
+  --shadow-2xs: 0px 0px 0px 0px hsl(0 0% 0% / 0.00);
+  --shadow-xs: 0px 0px 0px 0px hsl(0 0% 0% / 0.00);
+  --shadow-sm: 0px 0px 0px 0px hsl(0 0% 0% / 0.00), 0px 1px 2px -1px hsl(0 0% 0% / 0.00);
+  --shadow: 0px 0px 0px 0px hsl(0 0% 0% / 0.00), 0px 1px 2px -1px hsl(0 0% 0% / 0.00);
+  --shadow-md: 0px 0px 0px 0px hsl(0 0% 0% / 0.00), 0px 2px 4px -1px hsl(0 0% 0% / 0.00);
+  --shadow-lg: 0px 0px 0px 0px hsl(0 0% 0% / 0.00), 0px 4px 6px -1px hsl(0 0% 0% / 0.00);
+  --shadow-xl: 0px 0px 0px 0px hsl(0 0% 0% / 0.00), 0px 8px 10px -1px hsl(0 0% 0% / 0.00);
+  --shadow-2xl: 0px 0px 0px 0px hsl(0 0% 0% / 0.00);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+```
 
 **Pages:**
 - Sign-in / sign-up — fully custom UI (our own shadcn-styled form
-  components: email/password fields, verification-code step), built on
-  Clerk's headless `useSignIn`/`useSignUp` hooks — **no Clerk hosted
-  `<SignIn/>`/`<SignUp/>` components** anywhere in the app. Clerk stays
-  the identity/session backend only; every pixel is ours.
+  components: email/password fields, verification-code step, plus a
+  "Continue with Google" button) built on Clerk's headless `useSignIn`/
+  `useSignUp` hooks — **no Clerk hosted `<SignIn/>`/`<SignUp/>`
+  components** anywhere in the app. Clerk stays the identity/session
+  backend only; every pixel is ours. Successful auth redirects to
+  `/dashboard` (or the onboarding gate) per §5 step 2.
+- `/sso-callback` — thin route that completes the Google OAuth redirect
+  and forwards to the same post-auth redirect logic as email sign-in.
 - Onboarding gate — shown whenever there's no active organization: create
   one, or paste/open an invite link. Nothing past this screen is reachable
   without an active org.
@@ -511,3 +733,9 @@ Vitest, fast and deterministic — no network calls, no LLM.
   and its `sessions.routes.ts`/`sessions.controller.ts` are from the earlier
   hackathon scenario and are unused by salary management — removed as part
   of the implementation plan, not left alongside the new schema.
+- **Manual Clerk Dashboard setup** (can't be scripted, done once before
+  first run): enable the Google OAuth social-connection provider; register
+  the `POST /webhooks/clerk` endpoint URL and copy its signing secret into
+  `CLERK_WEBHOOK_SECRET`; add the Worker's deployed origin (and
+  `localhost` for dev) to Clerk's allowed redirect URLs for
+  `redirectUrlComplete: "/dashboard"` and `/sso-callback` to resolve.
