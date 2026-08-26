@@ -61,6 +61,12 @@ with two permission levels per organization — see §5.
   required for the invite flow to function end-to-end.
 - *Org chart / performance reviews / benefits.* Adjacent HR features not
   implied by "salary management."
+- *Payments/subscriptions (e.g. Razorpay).* Multi-tenant doesn't imply
+  billed — nothing in the brief mentions pricing or plans, and a billing
+  layer (checkout, webhook-verified entitlements, invoices, dunning) is
+  real scope for a concern nothing has asked for. Not a one-line cut like
+  the others above — if this is wanted later it deserves its own design
+  pass, not a bolt-on.
 
 ## 2. Architecture
 
