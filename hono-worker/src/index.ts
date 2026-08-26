@@ -26,7 +26,7 @@ app.use(
 app.onError(onError);
 app.notFound(notFound);
 
-app.get("/", (c) => c.json({ name: "swades-hackathon-worker", status: "ok" }));
+app.get("/", (c) => c.json({ name: "salary-management-api", status: "ok" }));
 
 app.route("/api", healthRoutes);
 app.route("/api", exampleRoutes);
