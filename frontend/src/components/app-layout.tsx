@@ -18,17 +18,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { OrgSwitcher } from "@/components/org-switcher";
 
+// Paths are relative to the org segment - see NavLink's `to` below.
 const NAV = [
-  { to: "/dashboard", label: "Dashboard", icon: BarChart3 },
-  { to: "/employees", label: "Employees", icon: Users },
-  { to: "/members", label: "Members", icon: UsersRound, adminOnly: true },
-  { to: "/audit-log", label: "Audit log", icon: ClipboardList },
+  { to: "dashboard", label: "Dashboard", icon: BarChart3 },
+  { to: "employees", label: "Employees", icon: Users },
+  { to: "members", label: "Members", icon: UsersRound, adminOnly: true },
+  { to: "audit-log", label: "Audit log", icon: ClipboardList },
 ];
 
 const COLLAPSED_KEY = "sidebarCollapsed";
 
 export function AppLayout() {
-  const { role, isAdmin } = useOrg();
+  const { role, isAdmin, orgSlug } = useOrg();
   const { signOut } = useClerk();
   const { user } = useUser();
   const location = useLocation();
@@ -99,7 +100,7 @@ export function AppLayout() {
         {items.map((item) => (
           <NavLink
             key={item.to}
-            to={item.to}
+            to={`/${orgSlug}/${item.to}`}
             title={collapsed ? item.label : undefined}
             className={({ isActive }) =>
               cn(

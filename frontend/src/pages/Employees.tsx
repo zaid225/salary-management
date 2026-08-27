@@ -24,7 +24,7 @@ const PAGE_SIZE = 25;
 // full list and slices it client-side.
 export function EmployeesPage() {
   const [params, setParams] = useSearchParams();
-  const { isAdmin, api, activeOrgId } = useOrg();
+  const { isAdmin, api, activeOrgId, orgSlug } = useOrg();
   const [createOpen, setCreateOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
   const [searchDraft, setSearchDraft] = React.useState(params.get("search") ?? "");
@@ -202,7 +202,7 @@ export function EmployeesPage() {
                 data.employees.map((e) => (
                   <TableRow key={e.id}>
                     <TableCell>
-                      <Link to={`/employees/${e.id}`} className="font-medium underline-offset-4 hover:underline">
+                      <Link to={`/${orgSlug}/employees/${e.id}`} className="font-medium underline-offset-4 hover:underline">
                         {e.firstName} {e.lastName}
                       </Link>
                       <p className="text-xs text-muted-foreground">{e.email}</p>

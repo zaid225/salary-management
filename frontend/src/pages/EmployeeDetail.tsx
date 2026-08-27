@@ -30,7 +30,7 @@ type SalaryForm = z.input<typeof AddSalaryRecordSchema>;
 
 export function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { isAdmin } = useOrg();
+  const { isAdmin, orgSlug } = useOrg();
   const navigate = useNavigate();
   const { data, isPending, isError, refetch } = useEmployee(id);
   const terminate = useTerminateEmployee();
@@ -43,7 +43,7 @@ export function EmployeeDetailPage() {
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" asChild>
-        <Link to="/employees">
+        <Link to={`/${orgSlug}/employees`}>
           <ArrowLeft />
           Back to employees
         </Link>
@@ -84,7 +84,7 @@ export function EmployeeDetailPage() {
                   <AlertDialogAction
                     onClick={async () => {
                       await terminate.mutateAsync(employee.id);
-                      navigate("/employees");
+                      navigate(`/${orgSlug}/employees`);
                     }}
                   >
                     Terminate

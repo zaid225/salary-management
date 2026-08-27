@@ -1,9 +1,11 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { SignedIn, SignedOut, useAuth } from "@clerk/clerk-react";
 import { useOrg } from "@/lib/org-context";
 import { AppLayout } from "@/components/app-layout";
 import { AuthShell } from "@/components/auth-shell";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SignInPage } from "@/pages/SignIn";
 import { SignUpPage } from "@/pages/SignUp";
 import { SsoCallbackPage } from "@/pages/SsoCallback";
@@ -25,18 +27,19 @@ export default function App() {
       <Route path="/accept-invite/:token" element={<RequireAuth><AcceptInvitePage /></RequireAuth>} />
       <Route path="/onboarding" element={<RequireAuth><OnboardingPage /></RequireAuth>} />
 
-      {/* Everything below needs both a session and an active organization. */}
-      <Route element={<RequireOrg />}>
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/employees" element={<EmployeesPage />} />
-        <Route path="/employees/:id" element={<EmployeeDetailPage />} />
-        <Route path="/members" element={<MembersPage />} />
-        <Route path="/audit-log" element={<AuditLogPage />} />
+      {/* The organization is part of the URL, so a link to a page is a link
+          to that page for that organization - shareable and bookmarkable. */}
+      <Route path="/:orgSlug" element={<RequireOrg />}>
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="employees" element={<EmployeesPage />} />
+        <Route path="employees/:id" element={<EmployeeDetailPage />} />
+        <Route path="members" element={<MembersPage />} />
+        <Route path="audit-log" element={<AuditLogPage />} />
       </Route>
 
-      {/* §5 step 2: a successful sign-in always resolves to somewhere real. */}
+      {/* A successful sign-in always resolves to somewhere real (§5 step 2). */}
       <Route path="/" element={<PostAuthGate />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
@@ -59,27 +62,59 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Decides where an authenticated user actually lands: no orgs -> onboarding
-// gate, otherwise the dashboard for the active (or first) org. A user never
-// ends up back on the sign-in page or a blank shell after authenticating.
+// Decides where an authenticated user lands: no orgs -> onboarding gate,
+// otherwise the last-used org (or their first). A user never ends up back on
+// the sign-in page or a blank shell after authenticating.
 function PostAuthGate() {
   const { isLoaded, isSignedIn } = useAuth();
-  const { isLoading, memberships } = useOrg();
+  const { isLoading, memberships, defaultOrgSlug } = useOrg();
 
   if (!isLoaded || (isSignedIn && isLoading)) return <LoadingScreen />;
   if (!isSignedIn) return <Navigate to="/sign-in" replace />;
-  if (memberships.length === 0) return <Navigate to="/onboarding" replace />;
-  return <Navigate to="/dashboard" replace />;
+  if (memberships.length === 0 || !defaultOrgSlug) return <Navigate to="/onboarding" replace />;
+  return <Navigate to={`/${defaultOrgSlug}/dashboard`} replace />;
 }
 
 function RequireOrg() {
   const { isLoaded, isSignedIn } = useAuth();
-  const { isLoading, activeOrgId } = useOrg();
+  const { isLoading, activeOrg, memberships, orgSlug } = useOrg();
 
   if (!isLoaded || (isSignedIn && isLoading)) return <LoadingScreen />;
   if (!isSignedIn) return <Navigate to="/sign-in" replace />;
-  if (!activeOrgId) return <Navigate to="/onboarding" replace />;
+  if (memberships.length === 0) return <Navigate to="/onboarding" replace />;
+  // A slug that isn't one of theirs is a distinct case from having no orgs:
+  // a shared link to an org they aren't in, or a typo. Say so rather than
+  // silently bouncing them somewhere else.
+  if (!activeOrg) return <UnknownOrg slug={orgSlug} />;
   return <AppLayout />;
+}
+
+function UnknownOrg({ slug }: { slug: string | null }) {
+  const { defaultOrgSlug } = useOrg();
+  const location = useLocation();
+  return (
+    <AuthShell>
+      <Card>
+        <CardHeader>
+          <CardTitle>Organization not found</CardTitle>
+          <CardDescription>
+            You&apos;re not a member of <code className="font-mono">{slug ?? location.pathname}</code>, or it
+            doesn&apos;t exist.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {defaultOrgSlug && (
+            <Button asChild className="w-full">
+              <a href={`/${defaultOrgSlug}/dashboard`}>Go to your organization</a>
+            </Button>
+          )}
+          <Button variant="outline" className="w-full" asChild>
+            <a href="/onboarding">Create or join one</a>
+          </Button>
+        </CardContent>
+      </Card>
+    </AuthShell>
+  );
 }
 
 function LoadingScreen() {

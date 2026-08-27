@@ -158,11 +158,21 @@ export function ImportCsvDialog({
                 </div>
               )}
 
-              <details className="rounded-md bg-muted p-3">
+              <details className="min-w-0 rounded-md bg-muted p-3">
                 <summary className="cursor-pointer text-xs font-medium">Expected columns</summary>
-                <code className="mt-2 block overflow-x-auto whitespace-pre text-xs text-muted-foreground">
-                  {EXPECTED_COLUMNS.join(",")}
-                </code>
+                {/* Wrapped chips rather than one long comma-joined line: as a
+                    single pre-formatted string this was wider than the dialog
+                    and pushed the whole modal out of shape when expanded. */}
+                <ul className="mt-2 flex flex-wrap gap-1">
+                  {EXPECTED_COLUMNS.map((c) => (
+                    <li
+                      key={c}
+                      className="rounded border bg-background px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+                    >
+                      {c}
+                    </li>
+                  ))}
+                </ul>
               </details>
             </>
           )}

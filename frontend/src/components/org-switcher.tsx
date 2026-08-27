@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 // Custom-built, deliberately not Clerk's <OrganizationSwitcher/> - orgs are
 // our own tables, not Clerk's Organization primitive (design spec §1, §7).
 export function OrgSwitcher() {
-  const { memberships, activeOrg, setActiveOrgId } = useOrg();
+  const { memberships, activeOrg, switchOrg } = useOrg();
   const navigate = useNavigate();
 
   return (
@@ -33,7 +33,7 @@ export function OrgSwitcher() {
         {memberships.map((m) => (
           <DropdownMenuItem
             key={m.organization.id}
-            onSelect={() => setActiveOrgId(m.organization.id)}
+            onSelect={() => switchOrg(m.organization.slug)}
             className="justify-between"
           >
             <span className="truncate">{m.organization.name}</span>

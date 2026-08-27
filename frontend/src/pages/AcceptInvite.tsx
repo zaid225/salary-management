@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export function AcceptInvitePage() {
   const { token } = useParams<{ token: string }>();
   const accept = useAcceptInvitation();
-  const { setActiveOrgId } = useOrg();
+  const { rememberOrg, memberships } = useOrg();
   const navigate = useNavigate();
   const [error, setError] = React.useState<string | null>(null);
 
@@ -18,8 +18,15 @@ export function AcceptInvitePage() {
     setError(null);
     try {
       const result = await accept.mutateAsync(token);
-      setActiveOrgId(result.organizationId);
-      navigate("/dashboard", { replace: true });
+      // The accept response carries the org id; the slug comes from the
+      // refreshed membership list the mutation just invalidated.
+      const joined = memberships.find((m) => m.organization.id === result.organizationId);
+      if (joined) {
+        rememberOrg(joined.organization.slug);
+        navigate(`/${joined.organization.slug}/dashboard`, { replace: true });
+      } else {
+        navigate("/", { replace: true });
+      }
     } catch (err) {
       // The server distinguishes 404 (never existed) from 410 (expired,
       // already accepted, or revoked) - show whichever it said.
