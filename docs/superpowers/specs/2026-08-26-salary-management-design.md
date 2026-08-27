@@ -89,8 +89,8 @@ as the first step of the implementation plan, not left to rot.
 ## 3. Data model
 
 `hono-worker/src/models/schema.ts` (Drizzle, Postgres dialect). Replaces the
-old chunking-pipeline `sessions`/`chunks` tables from the earlier hackathon
-scenario, which are unused by this feature.
+old chunking-pipeline `sessions`/`chunks` tables from the earlier prototype
+scaffolding, which are unused by this feature.
 
 ```ts
 // --- Local mirror of Clerk identity, kept in sync via webhook ---
@@ -285,7 +285,7 @@ writable" scope.
 | GET | /audit-log | member | Paginated, filterable by entity |
 
 CSV import: parsed in-memory (bounded size — a few thousand rows, not the
-5k-RPS streaming scenario from the earlier hackathon context), validated
+5k-RPS streaming scenario from the earlier prototype scaffolding), validated
 row-by-row with zod, upserted in transactional batches of ~500 keyed on
 `(organization_id, employee_number)`, response reports `{ created, updated,
 failed: [{ row, error }] }`.
@@ -878,7 +878,7 @@ degrades the affected feature, never crashes boot):
 - Delete `fastify-api/` (superseded scaffold, unused by this feature).
 - The old `sessions`/`chunks` schema in `hono-worker/src/models/schema.ts`
   and its `sessions.routes.ts`/`sessions.controller.ts` are from the earlier
-  hackathon scenario and are unused by salary management — removed as part
+  prototype scaffolding and are unused by salary management — removed as part
   of the implementation plan, not left alongside the new schema.
 - **Manual Clerk Dashboard setup** (can't be scripted, done once before
   first run): enable the Google OAuth social-connection provider; register

@@ -10,7 +10,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import * as React from "react";
+import { FileDown } from "lucide-react";
+import { toast } from "sonner";
 import { useAnalytics } from "@/hooks/queries";
+import { useOrg } from "@/lib/org-context";
+import { useUser } from "@clerk/clerk-react";
+import { Button } from "@/components/ui/button";
 import { formatUsd } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,10 +33,59 @@ const CHART_COLORS = [
 
 export function DashboardPage() {
   const { data, isPending, isError, refetch } = useAnalytics();
+  const { activeOrg } = useOrg();
+  const { user } = useUser();
+  const deptChartRef = React.useRef<HTMLDivElement>(null);
+  const countryChartRef = React.useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = React.useState(false);
+
+  async function onExportPdf() {
+    if (!data) return;
+    setExporting(true);
+    try {
+      // The charts are captured from the rendered DOM rather than redrawn,
+      // so the report can never disagree with the dashboard it came from.
+      const nodes = [deptChartRef.current, countryChartRef.current].filter(
+        (n): n is HTMLDivElement => n !== null,
+      );
+      // Loaded on demand: jspdf + html2canvas are ~650 kB, and most visits
+      // to this dashboard never export anything.
+      const { buildSalaryReport } = await import("@/lib/pdf-report");
+      const blob = await buildSalaryReport(data, nodes, {
+        orgName: activeOrg?.organization.name ?? "Organization",
+        generatedBy: user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "unknown",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `salary-report-${activeOrg?.organization.slug ?? "org"}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Report downloaded");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not build the report");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Dashboard" description="How this organization pays people, normalized to USD." />
+      <PageHeader
+        title="Dashboard"
+        description="How this organization pays people, normalized to USD."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void onExportPdf()}
+            disabled={exporting || isPending || isError || !data || data.headcount === 0}
+          >
+            <FileDown />
+            {exporting ? "Building report…" : "Export PDF report"}
+          </Button>
+        }
+      />
 
       {isError ? (
         <ErrorState onRetry={() => void refetch()} />
@@ -64,7 +119,7 @@ export function DashboardPage() {
                 <CardTitle className="text-base">Average salary by department</CardTitle>
                 <CardDescription>USD-normalized, active employees only</CardDescription>
               </CardHeader>
-              <CardContent className="h-72">
+              <CardContent className="h-72" ref={deptChartRef}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={data.byDepartment} margin={{ left: 8, right: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -106,7 +161,7 @@ export function DashboardPage() {
                 <CardTitle className="text-base">Headcount by country</CardTitle>
                 <CardDescription>Active employees</CardDescription>
               </CardHeader>
-              <CardContent className="h-72">
+              <CardContent className="h-72" ref={countryChartRef}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie

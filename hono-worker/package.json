@@ -13,7 +13,8 @@
     "db:studio": "drizzle-kit studio",
     "seed": "tsx scripts/seed.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "csv:generate": "tsx scripts/generate-csv.ts"
   },
   "dependencies": {
     "@clerk/backend": "^1.21.2",

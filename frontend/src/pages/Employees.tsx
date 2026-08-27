@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Download, Plus, Upload } from "lucide-react";
+import { toast } from "sonner";
 import { useEmployees } from "@/hooks/queries";
 import { useOrg } from "@/lib/org-context";
 import { formatMoney } from "@/lib/utils";
@@ -27,6 +28,7 @@ export function EmployeesPage() {
   const [createOpen, setCreateOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
   const [searchDraft, setSearchDraft] = React.useState(params.get("search") ?? "");
+  const [exporting, setExporting] = React.useState(false);
 
   const page = Number(params.get("page") ?? "0");
   const filters: EmployeeFilters = {
@@ -51,6 +53,23 @@ export function EmployeesPage() {
   }
 
   async function onExport() {
+    // Exporting the current view when the current view is empty just hands
+    // the user a header-only file and looks broken - say so instead.
+    if (!data || data.employees.length === 0) {
+      toast.info("Nothing to export — no employees match these filters.");
+      return;
+    }
+    setExporting(true);
+    try {
+      await runExport();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function runExport() {
     const csv = await api.request<string>(
       `/api/employees/export?${new URLSearchParams(
         Object.entries(filters)
@@ -76,9 +95,14 @@ export function EmployeesPage() {
         description="Filter, search and page through this organization's roster."
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => void onExport()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void onExport()}
+              disabled={exporting || isPending || !data || data.employees.length === 0}
+            >
               <Download />
-              Export CSV
+              {exporting ? "Exporting…" : "Export CSV"}
             </Button>
             {isAdmin && (
               <>

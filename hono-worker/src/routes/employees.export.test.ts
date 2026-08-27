@@ -79,4 +79,24 @@ describe("GET /employees/export", () => {
     expect(text).not.toContain("EMP-0002"); // filtered out by country=US
     expect(text).toContain("50000.00");
   });
+
+  it("still returns a header row when nothing matches the filter", async () => {
+    const orgRows = await db.insert(organizations).values({ name: "ACME", slug: "acme-export-empty" }).returning();
+    const org = orgRows[0];
+    if (!org) throw new Error("insert did not return a row");
+    await db
+      .insert(memberships)
+      .values({ organizationId: org.id, clerkUserId: "viewer_1", role: "viewer", status: "active" });
+
+    const res = await employeesRoutes.fetch(
+      new Request("http://test/employees/export?country=ZZ", { headers: authed("viewer_1", org.id) }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    // An empty result is still a valid CSV, not a 0-byte file.
+    expect(text.split("\n")[0]).toContain("employeeNumber");
+    expect(text.trim().split("\n")).toHaveLength(1);
+  });
 });

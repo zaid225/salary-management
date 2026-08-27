@@ -17,7 +17,7 @@ Everything from Plan 1's Global Constraints still applies (zod/v4, shared error 
 - Every list endpoint uses the shared `PaginationQuery` schema (Task 2): `limit` default 25, max 100, clamped not rejected; `offset` default 0.
 - Employee/salary mutations run inside `db.transaction(...)` with their `audit_log` insert — never a bare insert/update outside a transaction for these two tables.
 - Deletes are soft (`employees.employmentStatus = 'terminated'`), never a hard `DELETE`.
-- CSV import/export never buffers unboundedly beyond what a "few thousand rows" implies — no streaming infrastructure needed (this is not the 5k-RPS binary scenario from the unrelated hackathon context), but still chunked into transactional batches of 500 rows.
+- CSV import/export never buffers unboundedly beyond what a "few thousand rows" implies — no streaming infrastructure needed (this is not the 5k-RPS binary scenario from the earlier prototype context), but still chunked into transactional batches of 500 rows.
 - `fx_rates` is the one deliberately non-org-scoped table — global reference data, read but never written by any route in this plan (seeded once by `scripts/seed.ts`).
 - After Task 1, org-scoped route handlers read the DB connection via `c.get("db")!`, never call `getDb(c.env)` themselves — `resolveOrg` is the single place that opens and closes it for the whole downstream chain.
 

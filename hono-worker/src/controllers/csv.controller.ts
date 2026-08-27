@@ -25,6 +25,23 @@ interface CsvRow {
 
 const BATCH_SIZE = 500;
 
+// The export's column order, declared once so the header is stable whether
+// or not any rows matched the filter.
+const EXPORT_COLUMNS = [
+  "employeeNumber",
+  "firstName",
+  "lastName",
+  "email",
+  "country",
+  "department",
+  "jobTitle",
+  "level",
+  "employmentStatus",
+  "hireDate",
+  "currentSalaryAmount",
+  "currentSalaryCurrency",
+] as const;
+
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -239,7 +256,12 @@ export async function exportEmployeesCsv(c: Context<AppBindings, string, ExportI
     };
   });
 
-  const csv = Papa.unparse(csvRows);
+  // Pass the field list explicitly rather than letting Papa infer it from
+  // the rows: with zero matching employees it would infer nothing and
+  // return an empty string, so the download would be a 0-byte file with no
+  // header. An empty result should still be a valid CSV - a header row and
+  // no data rows.
+  const csv = Papa.unparse({ fields: [...EXPORT_COLUMNS], data: csvRows.map((r) => EXPORT_COLUMNS.map((c2) => r[c2])) });
   c.header("Content-Type", "text/csv; charset=utf-8");
   c.header("Content-Disposition", `attachment; filename="employees-export.csv"`);
   return c.body(csv);

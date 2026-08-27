@@ -60,7 +60,7 @@ hono-worker/
       invitations.routes.test.ts # NEW
       members.routes.ts        # NEW
       members.routes.test.ts   # NEW
-      sessions.routes.ts       # DELETE (old hackathon scaffold)
+      sessions.routes.ts       # DELETE (old prototype scaffolding scaffold)
     controllers/sessions.controller.ts # DELETE
     index.ts                 # MODIFY: register new routes, drop sessions route
     index.test.ts             # NEW: cross-tenant isolation end-to-end test
@@ -75,7 +75,7 @@ fastify-api/                     # DELETE (whole directory, unused scaffold)
 
 ---
 
-### Task 1: Remove obsolete hackathon scaffolding
+### Task 1: Remove obsolete prototype scaffolding scaffolding
 
 **Files:**
 - Delete: `fastify-api/` (entire directory)
@@ -125,7 +125,7 @@ app.use(
 app.onError(onError);
 app.notFound(notFound);
 
-app.get("/", (c) => c.json({ name: "swades-hackathon-worker", status: "ok" }));
+app.get("/", (c) => c.json({ name: "swades-prototype scaffolding-worker", status: "ok" }));
 
 app.route("/api", healthRoutes);
 app.route("/api", exampleRoutes);
@@ -142,7 +142,7 @@ Expected: no errors (the old `sessions`/`chunks` exports in `schema.ts` are now 
 
 ```bash
 git add hono-worker/src/index.ts
-git commit -m "chore: remove unused fastify-api scaffold and hackathon sessions/chunks routes"
+git commit -m "chore: remove unused fastify-api scaffold and prototype scaffolding sessions/chunks routes"
 ```
 
 ---
@@ -2421,7 +2421,7 @@ app.use(
 app.onError(onError);
 app.notFound(notFound);
 
-app.get("/", (c) => c.json({ name: "swades-hackathon-worker", status: "ok" }));
+app.get("/", (c) => c.json({ name: "swades-prototype scaffolding-worker", status: "ok" }));
 
 app.route("/api", healthRoutes);
 app.route("/api", exampleRoutes);
