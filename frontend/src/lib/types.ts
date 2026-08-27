@@ -116,6 +116,12 @@ export interface AnalyticsSummary {
   byCountry: (Breakdown & { country: string })[];
   byDepartment: (Breakdown & { department: string })[];
   byLevel: (Breakdown & { level: string })[];
+  coverage: {
+    withSalary: number;
+    included: number;
+    excluded: number;
+    missingCurrencies: string[];
+  };
 }
 
 export interface AuditEntry {

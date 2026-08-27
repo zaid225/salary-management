@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import * as React from "react";
-import { FileDown } from "lucide-react";
+import { AlertTriangle, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { useAnalytics } from "@/hooks/queries";
 import { useOrg } from "@/lib/org-context";
@@ -104,11 +104,32 @@ export function DashboardPage() {
             <StatCard label="Total payroll cost" value={formatUsd(data.totalCostUsd)} />
           </div>
 
-          {data.headcount === 0 && (
+          {/* A blank dashboard used to give no reason at all. The two ways it
+              can legitimately be empty are told apart here: nothing to show
+              yet, versus everything excluded for want of an exchange rate. */}
+          {data.coverage.excluded > 0 && (
+            <Card className="border-destructive/40">
+              <CardContent className="flex gap-3 p-4 text-sm">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                <div className="space-y-1">
+                  <p className="font-medium">
+                    {data.coverage.excluded.toLocaleString()} of {data.coverage.withSalary.toLocaleString()}{" "}
+                    employees are missing from these figures
+                  </p>
+                  <p className="text-muted-foreground">
+                    Everything here is normalized to USD, and there is no exchange rate on record for{" "}
+                    <strong className="text-foreground">{data.coverage.missingCurrencies.join(", ")}</strong>.
+                    Add those rates to the fx_rates table (or run the seed script) and they will appear.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {data.headcount === 0 && data.coverage.excluded === 0 && (
             <Card>
               <CardContent className="p-6 text-sm text-muted-foreground">
-                No salary data to summarize yet. Note that employees paid in a currency with no FX rate on
-                record are excluded from these figures rather than counted at par.
+                No salary data to summarize yet. Add employees or import a CSV to see figures here.
               </CardContent>
             </Card>
           )}
