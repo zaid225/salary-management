@@ -32,9 +32,7 @@ export function rateLimitByIp(limit: number, windowSeconds: number) {
         );
       }
     } catch (err) {
-      console.error(
-        JSON.stringify({ level: "warn", msg: "rate limit check skipped", err: String(err) }),
-      );
+      console.error(JSON.stringify(rateLimitSkipLog(err)));
     }
 
     await next();
@@ -69,9 +67,26 @@ export function rateLimitByOrg(limit: number, windowSeconds: number) {
         return c.json({ error: { message: "Too many requests", statusCode: 429 } }, 429);
       }
     } catch (err) {
-      console.error(JSON.stringify({ level: "warn", msg: "rate limit check skipped", err: String(err) }));
+      console.error(JSON.stringify(rateLimitSkipLog(err)));
     }
 
     await next();
   };
+}
+
+// @upstash/ratelimit runs its sliding-window algorithm as a Lua script, so
+// the credential needs EVAL/EVALSHA. A read-only REST token passes GET and
+// fails here with NOPERM - worth naming, because the symptom is otherwise a
+// vague "skipped" line and silently unlimited endpoints.
+function rateLimitSkipLog(err: unknown): Record<string, string> {
+  const text = String(err);
+  const base = { level: "warn", msg: "rate limit check skipped", err: text };
+  if (text.includes("NOPERM")) {
+    return {
+      ...base,
+      cause: "Upstash credential lacks EVAL permission - this looks like the read-only REST token",
+      fix: "Set UPSTASH_REDIS_REST_TOKEN to the full-access token from the Upstash console",
+    };
+  }
+  return base;
 }

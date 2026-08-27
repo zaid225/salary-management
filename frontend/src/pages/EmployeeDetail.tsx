@@ -179,7 +179,7 @@ function AddSalaryForm({ employeeId }: { employeeId: string }) {
           className="grid gap-3 sm:grid-cols-4"
         >
           <Field label="Amount" error={errors.amount?.message}>
-            <Input type="number" step="0.01" {...register("amount")} />
+            <Input type="number" step="0.01" placeholder="95000" {...register("amount")} />
           </Field>
           <Field label="Currency" error={errors.currency?.message}>
             <Input placeholder="USD" maxLength={3} {...register("currency")} />

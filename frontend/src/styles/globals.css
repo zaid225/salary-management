@@ -179,3 +179,9 @@
     letter-spacing: var(--tracking-normal);
   }
 }
+
+/* Indeterminate sweep for the CSV import progress bar. */
+@keyframes import-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

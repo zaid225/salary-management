@@ -67,14 +67,14 @@ export function CreateEmployeeDialog({
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Field label="First name" error={errors.firstName?.message}>
-              <Input {...register("firstName")} />
+              <Input placeholder="Grace" {...register("firstName")} />
             </Field>
             <Field label="Last name" error={errors.lastName?.message}>
-              <Input {...register("lastName")} />
+              <Input placeholder="Hopper" {...register("lastName")} />
             </Field>
           </div>
           <Field label="Email" error={errors.email?.message}>
-            <Input type="email" {...register("email")} />
+            <Input type="email" placeholder="grace.hopper@company.com" {...register("email")} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Employee number" error={errors.employeeNumber?.message}>
@@ -86,10 +86,10 @@ export function CreateEmployeeDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Department" error={errors.department?.message}>
-              <Input {...register("department")} />
+              <Input placeholder="Engineering" {...register("department")} />
             </Field>
             <Field label="Job title" error={errors.jobTitle?.message}>
-              <Input {...register("jobTitle")} />
+              <Input placeholder="Senior Engineer" {...register("jobTitle")} />
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -105,7 +105,7 @@ export function CreateEmployeeDialog({
             <legend className="px-1 text-xs font-medium text-muted-foreground">Initial salary</legend>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Amount" error={errors.salary?.amount?.message}>
-                <Input type="number" step="0.01" {...register("salary.amount")} />
+                <Input type="number" step="0.01" placeholder="120000" {...register("salary.amount")} />
               </Field>
               <Field label="Currency" error={errors.salary?.currency?.message}>
                 <Input placeholder="USD" maxLength={3} {...register("salary.currency")} />

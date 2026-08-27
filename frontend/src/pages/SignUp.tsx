@@ -114,16 +114,16 @@ export function SignUpPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="firstName">First name</Label>
-                    <Input id="firstName" {...field("firstName")} required />
+                    <Input id="firstName" placeholder="Grace" {...field("firstName")} required />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="lastName">Last name</Label>
-                    <Input id="lastName" {...field("lastName")} required />
+                    <Input id="lastName" placeholder="Hopper" {...field("lastName")} required />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" autoComplete="email" {...field("email")} required />
+                  <Input id="email" type="email" autoComplete="email" placeholder="you@company.com" {...field("email")} required />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
@@ -131,6 +131,7 @@ export function SignUpPage() {
                     id="password"
                     type="password"
                     autoComplete="new-password"
+                    placeholder="At least 8 characters"
                     {...field("password")}
                     required
                   />
@@ -157,6 +158,7 @@ export function SignUpPage() {
                 <Input
                   id="code"
                   inputMode="numeric"
+                  placeholder="123456"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   required

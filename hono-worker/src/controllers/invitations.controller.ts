@@ -8,6 +8,7 @@ import { scopedDb } from "../models/scoped-db.js";
 import { sendInviteEmail } from "../lib/postmark.js";
 import type { InviteMemberBody } from "../schemas/invitation.schema.js";
 import type { PaginationQuery } from "../schemas/pagination.schema.js";
+import { backfillMissingUsers } from "../lib/clerk-users.js";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -49,7 +50,10 @@ export async function createInvitation(c: Context<AppBindings, string, InviteIn>
     .returning();
 
   const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
-  const [inviter] = await db.select().from(users).where(eq(users.clerkUserId, userId)).limit(1);
+  // Same self-healing lookup the member list uses: without it the invite
+  // email goes out as "Someone invited you" whenever the webhook has not
+  // populated this user yet.
+  const inviter = (await backfillMissingUsers(c.env, db, [userId])).get(userId);
 
   // Fire-and-forget: response doesn't wait on email delivery.
   c.executionCtx.waitUntil(

@@ -20,13 +20,23 @@ export interface WriteAuditParams {
 // documents, so the audit entry and the mutation commit together or not
 // at all (design spec §3, database-indexing.md rule 4).
 export async function writeAudit(tx: Tx, params: WriteAuditParams): Promise<void> {
-  await tx.insert(auditLog).values({
-    organizationId: params.organizationId,
-    actorClerkUserId: params.actorClerkUserId,
-    action: params.action,
-    entityType: params.entityType,
-    entityId: params.entityId,
-    before: params.before,
-    after: params.after,
-  });
+  await writeAuditMany(tx, [params]);
+}
+
+// Same guarantee as writeAudit, one statement for many entries - a bulk
+// import would otherwise spend one round trip per row just on its audit
+// trail.
+export async function writeAuditMany(tx: Tx, entries: WriteAuditParams[]): Promise<void> {
+  if (entries.length === 0) return;
+  await tx.insert(auditLog).values(
+    entries.map((params) => ({
+      organizationId: params.organizationId,
+      actorClerkUserId: params.actorClerkUserId,
+      action: params.action,
+      entityType: params.entityType,
+      entityId: params.entityId,
+      before: params.before,
+      after: params.after,
+    })),
+  );
 }

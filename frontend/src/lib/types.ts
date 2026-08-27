@@ -147,6 +147,8 @@ export interface EmployeeFilters {
   department?: string;
   status?: "active" | "terminated";
   search?: string;
+  sort?: string;
+  order?: string;
   limit?: number;
   offset?: number;
 }

@@ -84,6 +84,7 @@ export function SignInPage() {
                 id="email"
                 type="email"
                 autoComplete="email"
+                placeholder="you@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -95,6 +96,7 @@ export function SignInPage() {
                 id="password"
                 type="password"
                 autoComplete="current-password"
+                placeholder="Your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required

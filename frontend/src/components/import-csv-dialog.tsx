@@ -158,6 +158,8 @@ export function ImportCsvDialog({
                 </div>
               )}
 
+              {importCsv.isPending && picked && <ImportProgress rows={picked.dataRows} />}
+
               <details className="min-w-0 rounded-md bg-muted p-3">
                 <summary className="cursor-pointer text-xs font-medium">Expected columns</summary>
                 {/* Wrapped chips rather than one long comma-joined line: as a
@@ -244,6 +246,35 @@ export function ImportCsvDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Deliberately indeterminate. The import is a single request that returns
+// only when the whole file has committed, so the client has no row-level
+// progress to report - showing a fake percentage would be worse than showing
+// none. Elapsed time plus the row count is what we can honestly say.
+function ImportProgress({ rows }: { rows: number }) {
+  const [elapsed, setElapsed] = React.useState(0);
+  React.useEffect(() => {
+    const started = Date.now();
+    const id = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 250);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <div className="flex items-center justify-between text-sm">
+        <span>Importing {rows.toLocaleString()} rows…</span>
+        <span className="tabular-nums text-muted-foreground">{elapsed}s</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full w-1/3 animate-[import-sweep_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Rows are written in transactional batches. Leaving this dialog cancels nothing that has already
+        committed, but the result summary will be lost.
+      </p>
+    </div>
   );
 }
 

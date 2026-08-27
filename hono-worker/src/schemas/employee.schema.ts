@@ -57,4 +57,8 @@ export const EmployeeListQuery = z.object({
   department: z.string().optional(),
   status: z.enum(["active", "terminated"]).optional(),
   search: z.string().optional(),
+  // Sorting is server-side: the client only ever holds one page, so sorting
+  // in the browser would sort that page, not the roster.
+  sort: z.enum(["employeeNumber", "firstName", "lastName", "department", "level", "country", "hireDate"]).optional(),
+  order: z.enum(["asc", "desc"]).optional(),
 });

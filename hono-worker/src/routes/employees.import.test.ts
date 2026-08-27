@@ -165,3 +165,48 @@ describe("POST /employees/import", () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe("POST /employees/import at volume", () => {
+  it("imports 250 rows in one request, then re-imports them as updates", async () => {
+    const org = await seedAdminOrg();
+    const rows = Array.from(
+      { length: 250 },
+      (_, i) =>
+        `EMP-${String(i + 1).padStart(6, "0")},First${i},Last${i},user${i}@example.com,US,Engineering,Engineer,L3,2024-01-01,${90000 + i},USD`,
+    );
+    const csv = [CSV_HEADER, ...rows].join("\n");
+
+    const started = Date.now();
+    const res = await employeesRoutes.fetch(
+      new Request("http://test/employees/import", { method: "POST", headers: authed("admin_1", org.id), body: csv }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    const elapsed = Date.now() - started;
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { created: number; updated: number; failed: unknown[] };
+    expect(body.created).toBe(250);
+    expect(body.updated).toBe(0);
+    expect(body.failed).toHaveLength(0);
+    console.log(`[perf] 250-row first import: ${elapsed}ms`);
+
+    const stored = await db.select().from(employees).where(eq(employees.organizationId, org.id));
+    expect(stored).toHaveLength(250);
+    const salaries = await db.select().from(salaryRecords).where(eq(salaryRecords.organizationId, org.id));
+    expect(salaries).toHaveLength(250);
+
+    // Re-importing the same file is a pure update path: no new employees, no
+    // new salary rows.
+    const second = await employeesRoutes.fetch(
+      new Request("http://test/employees/import", { method: "POST", headers: authed("admin_1", org.id), body: csv }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    const secondBody = (await second.json()) as { created: number; updated: number };
+    expect(secondBody.created).toBe(0);
+    expect(secondBody.updated).toBe(250);
+
+    const salariesAfter = await db.select().from(salaryRecords).where(eq(salaryRecords.organizationId, org.id));
+    expect(salariesAfter).toHaveLength(250);
+  });
+});

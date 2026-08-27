@@ -5,9 +5,37 @@ import * as schema from "../src/models/schema.js";
 import type { Db } from "../src/models/db.js";
 import type { CloudflareBindings } from "../src/lib/context.js";
 
+// Every test file truncates eight tables in beforeEach. If TEST_DATABASE_URL
+// and DATABASE_URL are the same database, running the suite destroys real
+// data - this has actually happened, so it is a hard failure rather than a
+// warning. Set ALLOW_DESTRUCTIVE_TESTS_ON_PROD_DB=1 only if you genuinely
+// mean it.
+function assertNotProductionDatabase(url: string): void {
+  const prod = process.env.DATABASE_URL;
+  if (!prod || process.env.ALLOW_DESTRUCTIVE_TESTS_ON_PROD_DB === "1") return;
+
+  const identity = (u: string): string => {
+    try {
+      const parsed = new URL(u);
+      return `${parsed.host}${parsed.pathname}`;
+    } catch {
+      return u;
+    }
+  };
+
+  if (identity(url) === identity(prod)) {
+    throw new Error(
+      "Refusing to run tests: TEST_DATABASE_URL points at the same database as DATABASE_URL, " +
+        "and the suite TRUNCATEs every table before each test file. " +
+        "Point TEST_DATABASE_URL at a separate database.",
+    );
+  }
+}
+
 export function testDb(): { db: Db; client: ReturnType<typeof postgres> } {
   const url = process.env.TEST_DATABASE_URL;
   if (!url) throw new Error("TEST_DATABASE_URL not set - see .env.test.example");
+  assertNotProductionDatabase(url);
   const client = postgres(url, { max: 5 });
   return { db: drizzle(client, { schema }), client };
 }

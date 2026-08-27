@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Download, Plus, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Download, Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useEmployees } from "@/hooks/queries";
 import { useOrg } from "@/lib/org-context";
@@ -38,7 +38,40 @@ export function EmployeesPage() {
     ...(params.get("country") ? { country: params.get("country")! } : {}),
     ...(params.get("department") ? { department: params.get("department")! } : {}),
     ...(params.get("status") ? { status: params.get("status") as "active" | "terminated" } : {}),
+    ...(params.get("sort") ? { sort: params.get("sort")! } : {}),
+    ...(params.get("order") ? { order: params.get("order")! } : {}),
   };
+
+  const sort = params.get("sort") ?? "employeeNumber";
+  const order = params.get("order") === "desc" ? "desc" : "asc";
+
+  // Clicking the active column flips direction; a new column starts ascending.
+  function toggleSort(column: string) {
+    const next = new URLSearchParams(params);
+    if (sort === column && order === "asc") next.set("order", "desc");
+    else next.set("order", "asc");
+    next.set("sort", column);
+    next.delete("page");
+    setParams(next, { replace: true });
+  }
+
+  function SortHeader({ column, label, align }: { column: string; label: string; align?: "right" }) {
+    const active = sort === column;
+    const Icon = !active ? ChevronsUpDown : order === "asc" ? ArrowUp : ArrowDown;
+    return (
+      <TableHead className={align === "right" ? "text-right" : undefined}>
+        <button
+          type="button"
+          onClick={() => toggleSort(column)}
+          aria-label={`Sort by ${label}`}
+          className={`inline-flex items-center gap-1 hover:text-foreground ${active ? "text-foreground" : ""}`}
+        >
+          {label}
+          <Icon className="size-3" />
+        </button>
+      </TableHead>
+    );
+  }
 
   const { data, isPending, isError, refetch } = useEmployees(filters);
 
@@ -170,11 +203,14 @@ export function EmployeesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Employee</TableHead>
-                <TableHead>Number</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>Level</TableHead>
-                <TableHead>Country</TableHead>
+                <SortHeader column="lastName" label="Employee" />
+                <SortHeader column="employeeNumber" label="Number" />
+                <SortHeader column="department" label="Department" />
+                <SortHeader column="level" label="Level" />
+                <SortHeader column="country" label="Country" />
+                {/* Not sortable: current salary is the latest row per
+                    employee, not a column on this table, and sorting by it
+                    would need the whole history joined per page. */}
                 <TableHead className="text-right">Current salary</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>

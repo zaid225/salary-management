@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { z } from "zod/v4";
-import { and, eq, ilike, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or } from "drizzle-orm";
 import type { AppBindings } from "../lib/context.js";
 import { employees, salaryRecords } from "../models/schema.js";
 import { scopedDb } from "../models/scoped-db.js";
@@ -42,16 +42,35 @@ export function employeeFilterConditions(orgId: string, f: Partial<EmployeeFilte
   return conditions;
 }
 
+// Only these columns are sortable, and the mapping is explicit - a column
+// name is never interpolated into SQL from the query string.
+const SORTABLE = {
+  employeeNumber: employees.employeeNumber,
+  firstName: employees.firstName,
+  lastName: employees.lastName,
+  department: employees.department,
+  level: employees.level,
+  country: employees.country,
+  hireDate: employees.hireDate,
+} as const;
+
 export async function listEmployees(c: Context<AppBindings, string, ListIn>): Promise<Response> {
   const db = c.get("db")!;
   const orgId = c.get("orgId")!;
   const filters = c.req.valid("query");
-  const { limit, offset } = filters;
+  const { limit, offset, sort, order } = filters;
+
+  // employeeNumber ascending is a stable, meaningful default; without an
+  // explicit ORDER BY, Postgres may return pages in overlapping orders and
+  // rows appear to jump between pages.
+  const column = SORTABLE[sort ?? "employeeNumber"];
+  const direction = order === "desc" ? desc : asc;
 
   const rows = await db
     .select()
     .from(employees)
     .where(and(...employeeFilterConditions(orgId, filters)))
+    .orderBy(direction(column), asc(employees.id))
     .limit(limit)
     .offset(offset);
 

@@ -3,6 +3,7 @@ import type { z } from "zod/v4";
 import { and, eq } from "drizzle-orm";
 import type { AppBindings } from "../lib/context.js";
 import { memberships, users } from "../models/schema.js";
+import { backfillMissingUsers } from "../lib/clerk-users.js";
 import { scopedDb } from "../models/scoped-db.js";
 import type { UpdateMembershipRoleBody } from "../schemas/membership.schema.js";
 import type { PaginationQuery } from "../schemas/pagination.schema.js";
@@ -24,6 +25,22 @@ export async function listMembers(c: Context<AppBindings, string, ListMembersIn>
     .where(and(eq(memberships.organizationId, orgId), eq(memberships.status, "active")))
     .limit(limit)
     .offset(offset);
+
+  // Anyone who signed up before the Clerk webhook was registered has no
+  // mirror row, and the UI would show a raw Clerk id instead of their name.
+  // Fetch those from Clerk once and persist them, so this self-heals.
+  const gaps = rows.filter((r) => r.user === null).map((r) => r.membership.clerkUserId);
+  if (gaps.length > 0) {
+    const filled = await backfillMissingUsers(c.env, db, gaps);
+    return c.json({
+      members: rows.map((r) => ({
+        ...r,
+        user: r.user ?? filled.get(r.membership.clerkUserId) ?? null,
+      })),
+      limit,
+      offset,
+    });
+  }
 
   return c.json({ members: rows, limit, offset });
 }
