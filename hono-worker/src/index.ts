@@ -11,6 +11,7 @@ import { membersRoutes } from "./routes/members.routes.js";
 import { employeesRoutes } from "./routes/employees.routes.js";
 import { analyticsRoutes } from "./routes/analytics.routes.js";
 import { auditRoutes } from "./routes/audit.routes.js";
+import { jobsRoutes } from "./routes/jobs.routes.js";
 
 const app = new Hono<AppBindings>();
 
@@ -44,5 +45,6 @@ app.route("/api", membersRoutes);
 app.route("/api", employeesRoutes);
 app.route("/api", analyticsRoutes);
 app.route("/api", auditRoutes);
+app.route("/api", jobsRoutes);
 
 export default app;

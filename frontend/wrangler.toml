@@ -1,12 +1,15 @@
 name = "salary-management"
+main = "worker/index.ts"
 compatibility_date = "2026-08-01"
 
 # Static-asset Worker rather than Pages: same result, and it only needs the
 # workers_scripts scope. not_found_handling is the load-bearing line - this
 # is a client-routed SPA, so a deep link like /employees/<id> must serve
-# index.html instead of a 404.
+# index.html instead of a 404. worker/index.ts narrows that fallback so it
+# never applies to hashed build assets.
 [assets]
 directory = "./dist"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 [observability]

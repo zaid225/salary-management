@@ -49,8 +49,12 @@ export function DashboardPage() {
         (n): n is HTMLDivElement => n !== null,
       );
       // Loaded on demand: jspdf + html2canvas are ~650 kB, and most visits
-      // to this dashboard never export anything.
-      const { buildSalaryReport } = await import("@/lib/pdf-report");
+      // to this dashboard never export anything. If the page has been open
+      // across a redeploy, this chunk's hashed filename no longer exists -
+      // that is a stale tab, not a broken feature, so say so plainly.
+      const { buildSalaryReport } = await import("@/lib/pdf-report").catch(() => {
+        throw new Error("This page is out of date after an update. Reload and try again.");
+      });
       const blob = await buildSalaryReport(data, nodes, {
         orgName: activeOrg?.organization.name ?? "Organization",
         generatedBy: user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "unknown",

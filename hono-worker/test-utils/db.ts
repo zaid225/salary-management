@@ -75,7 +75,7 @@ export async function truncateAll(db: Db): Promise<void> {
   // the org-scoped tables would never reach it and its seeded rows would
   // survive into the next test file as duplicate-PK conflicts.
   await db.execute(
-    sql`TRUNCATE TABLE audit_log, salary_records, employees, fx_rates, invitations, memberships, organizations, users RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE TABLE job_logs, jobs, audit_log, salary_records, employees, fx_rates, invitations, memberships, organizations, users RESTART IDENTITY CASCADE`,
   );
 }
 

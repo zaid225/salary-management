@@ -10,6 +10,7 @@ import {
   date,
   numeric,
   jsonb,
+  integer,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -157,4 +158,55 @@ export const auditLog = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("idx_audit_org_entity").on(t.organizationId, t.entityType, t.entityId)],
+);
+
+// --- Background jobs -------------------------------------------------
+// Long-running work (bulk delete over thousands of rows) cannot finish
+// inside one Worker request, and a browser tab is not a durable place to
+// keep progress. The row is the source of truth: closing the tab pauses
+// nothing that has already committed, and reopening shows exact progress.
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    type: varchar("type", { length: 40 }).notNull(), // bulk_delete_employees
+    status: varchar("status", { length: 20 }).notNull().default("queued"), // queued | running | succeeded | failed | cancelled
+    total: integer("total").notNull().default(0),
+    processed: integer("processed").notNull().default(0),
+    succeeded: integer("succeeded").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    // Whatever the runner needs to pick up where it left off - for a bulk
+    // delete, the filter plus the last id already handled.
+    params: jsonb("params"),
+    cursor: varchar("cursor", { length: 64 }),
+    error: text("error"),
+    // Lets an unauthenticated runner (a queue callback) prove it was the one
+    // asked to run this job, without a user session.
+    runToken: varchar("run_token", { length: 64 }).notNull(),
+    createdBy: varchar("created_by", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("idx_jobs_org_created").on(t.organizationId, t.createdAt),
+    index("idx_jobs_org_status").on(t.organizationId, t.status),
+  ],
+);
+
+export const jobLogs = pgTable(
+  "job_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => jobs.id),
+    level: varchar("level", { length: 10 }).notNull(), // info | warn | error
+    message: text("message").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_job_logs_job").on(t.jobId, t.createdAt)],
 );
