@@ -3,6 +3,11 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "../src/models/schema.js";
 import { generateEmployees } from "./generate-employees.js";
 
+declare const process: {
+  env: Record<string, string | undefined>;
+  exit(code?: number): never;
+};
+
 const FX_SNAPSHOT = [
   { currency: "USD", rateToUsd: "1.000000", asOfDate: "2026-01-01" },
   { currency: "GBP", rateToUsd: "1.270000", asOfDate: "2026-01-01" },

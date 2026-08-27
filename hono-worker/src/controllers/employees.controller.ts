@@ -142,7 +142,7 @@ export async function createEmployee(c: Context<AppBindings, string, CreateIn>):
 
 // postgres-js surfaces the SQLSTATE on the error itself, but a failure
 // inside db.transaction() can arrive wrapped, so check the cause too.
-function isUniqueViolation(err: unknown): boolean {
+export function isUniqueViolation(err: unknown): boolean {
   const code = (err as { code?: string })?.code;
   if (code === "23505") return true;
   const cause = (err as { cause?: { code?: string } })?.cause;

@@ -111,6 +111,43 @@ describe("POST /employees/import", () => {
     expect(body.failed[0]?.row).toBe(2); // 1-indexed data rows, header not counted
   });
 
+  it("resolves a same-batch duplicate employeeNumber as create-then-update, without aborting the rest of the batch", async () => {
+    const org = await seedAdminOrg();
+    const csv = [
+      CSV_HEADER,
+      "EMP-3000,Alan,Turing,alan@example.com,GB,Engineering,Analyst,L5,2024-01-01,110000,GBP",
+      "EMP-3000,Alan,Turing,alan@example.com,GB,Product,Senior Analyst,L6,2024-01-01,110000,GBP",
+      "EMP-3001,Barbara,Liskov,barbara@example.com,US,Engineering,Analyst,L5,2024-01-01,140000,USD",
+    ].join("\n");
+
+    const res = await employeesRoutes.fetch(
+      new Request("http://test/employees/import", { method: "POST", headers: authed("admin_1", org.id), body: csv }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { created: number; updated: number; failed: unknown[] };
+
+    // Row 1 creates EMP-3000; row 2 (same number, later in the same batch)
+    // finds row 1's just-inserted record via the tx-scoped lookup and takes
+    // the update branch. Row 3 still succeeds - the duplicate does not abort
+    // the rest of the batch.
+    expect(body.created).toBe(2);
+    expect(body.updated).toBe(1);
+    expect(body.failed).toHaveLength(0);
+
+    const rows = await db.select().from(employees).where(eq(employees.employeeNumber, "EMP-3000"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.department).toBe("Product"); // row 2's update won
+
+    const all = await db.select().from(employees).where(eq(employees.organizationId, org.id));
+    expect(all).toHaveLength(2);
+
+    // salary was only ever written once for EMP-3000 (on the initial create)
+    const salaries = await db.select().from(salaryRecords).where(eq(salaryRecords.employeeId, rows[0]!.id));
+    expect(salaries).toHaveLength(1);
+  });
+
   it("403s a viewer", async () => {
     const org = await seedAdminOrg();
     await db
