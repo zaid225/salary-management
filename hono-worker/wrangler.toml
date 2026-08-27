@@ -9,7 +9,7 @@ head_sampling_rate = 1
 
 [vars]
 NODE_ENV = "production"
-ALLOWED_ORIGIN = ""
+FRONTEND_URL = ""
 
 # Commented out on purpose: an unfilled placeholder id/localConnectionString
 # makes `wrangler dev`/`deploy` crash outright (Hyperdrive parses both

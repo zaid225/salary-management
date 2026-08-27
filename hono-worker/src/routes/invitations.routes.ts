@@ -10,6 +10,7 @@ import {
   createInvitation,
   acceptInvitation,
   listInvitations,
+  revokeInvitation,
 } from "../controllers/invitations.controller.js";
 
 export const invitationsRoutes = new Hono<AppBindings>();
@@ -38,5 +39,12 @@ invitationsRoutes.get(
   resolveOrg,
   validateQuery(PaginationQuery),
   listInvitations,
+);
+invitationsRoutes.delete(
+  "/organizations/:orgId/invitations/:invitationId",
+  requireAuth,
+  resolveOrg,
+  requireRole("admin"),
+  revokeInvitation,
 );
 invitationsRoutes.post("/invitations/:token/accept", requireAuth, acceptInvitation);

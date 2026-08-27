@@ -229,7 +229,7 @@ helper, not hand-written per route, so a route can't accidentally omit it.
 ## 4. API surface
 
 All routes under `/api`, zod-validated body/query/params, all list
-endpoints paginated (`limit`/`cursor`, default `limit=25`, max `100` —
+endpoints paginated (`limit`/`offset`, default `limit=25`, max `100` —
 requests above the max are clamped, not rejected), errors in the shared
 `{ error: { message, statusCode } }` shape. Every route below except the
 org-management ones runs behind `requireAuth` + `resolveOrg` (§5) —
@@ -266,6 +266,8 @@ writable" scope.
 | POST | /invitations/:token/accept | requireAuth | Accept an invite → creates/activates a membership for the current user |
 | PATCH | /organizations/:orgId/members/:membershipId | resolveOrg + admin | Change a member's role |
 | DELETE | /organizations/:orgId/members/:membershipId | resolveOrg + admin | Soft-remove a member (status → removed, never a hard row delete — consistent with employees' soft-delete and keeps audit_log's actor references valid) |
+| GET | /organizations/:orgId/invitations | resolveOrg | List the org's pending invitations (backs the Members page's invite list) |
+| DELETE | /organizations/:orgId/invitations/:invitationId | resolveOrg + admin | Revoke a pending invitation (status → revoked, so its token stops redeeming) |
 
 **Salary management** (all require `resolveOrg`; write routes require `admin`):
 
@@ -715,7 +717,7 @@ cache and refetch under the new `X-Org-Id`.
 **Filter/sort/pagination state lives in the URL** (search params), not
 component state — shareable/bookmarkable, and it's what feeds the query key
 directly. The *server* does the actual filtering/sorting/paginating
-(§4's `limit`/`cursor` + filter params); TanStack Query's job is caching,
+(§4's `limit`/`offset` + filter params); TanStack Query's job is caching,
 deduping, and revalidating each distinct page/filter combination, never
 fetching a full list and slicing it client-side (that would silently
 reintroduce the unbounded-list problem §4 already ruled out).

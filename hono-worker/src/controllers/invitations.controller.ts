@@ -15,8 +15,8 @@ function newToken(): string {
   return crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
 }
 
-function acceptUrl(env: { ALLOWED_ORIGIN: string }, token: string): string {
-  const origin = env.ALLOWED_ORIGIN || "http://localhost:5173";
+function acceptUrl(env: { FRONTEND_URL: string }, token: string): string {
+  const origin = env.FRONTEND_URL || "http://localhost:5173";
   return `${origin}/accept-invite/${token}`;
 }
 
@@ -82,6 +82,37 @@ export async function listInvitations(c: Context<AppBindings, string, ListInvita
     .offset(offset);
 
   return c.json({ invitations: rows, limit, offset });
+}
+
+// Soft-revoke, consistent with every other delete in this API: the row
+// stays for the audit trail, its status flips so the token stops working
+// (acceptInvitation's status check rejects it with 410 from then on).
+export async function revokeInvitation(c: Context<AppBindings>): Promise<Response> {
+  const db = c.get("db")!;
+  const orgId = c.get("orgId")!;
+  const invitationId = c.req.param("invitationId");
+
+  if (!invitationId) {
+    return c.json({ error: { message: "Invitation not found", statusCode: 404 } }, 404);
+  }
+
+  const [target] = await db
+    .select()
+    .from(invitations)
+    .where(and(eq(invitations.id, invitationId), eq(invitations.organizationId, orgId)))
+    .limit(1);
+  if (!target) {
+    return c.json({ error: { message: "Invitation not found", statusCode: 404 } }, 404);
+  }
+  if (target.status !== "pending") {
+    return c.json(
+      { error: { message: "Only a pending invitation can be revoked", statusCode: 409 } },
+      409,
+    );
+  }
+
+  await db.update(invitations).set({ status: "revoked" }).where(eq(invitations.id, invitationId));
+  return c.json({ ok: true });
 }
 
 export async function acceptInvitation(c: Context<AppBindings>): Promise<Response> {

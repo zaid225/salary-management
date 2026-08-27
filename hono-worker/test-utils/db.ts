@@ -33,7 +33,7 @@ export function testEnv(overrides: Record<string, string> = {}): CloudflareBindi
     UPSTASH_REDIS_REST_URL: "",
     UPSTASH_REDIS_REST_TOKEN: "",
     QSTASH_TOKEN: "",
-    ALLOWED_ORIGIN: "",
+    FRONTEND_URL: "",
     POSTMARK_SERVER_TOKEN: "",
     POSTMARK_FROM_EMAIL: "",
     SEED_ADMIN_CLERK_USER_ID: "",

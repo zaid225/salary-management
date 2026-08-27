@@ -20,7 +20,7 @@ const EnvSchema = z.object({
   UPSTASH_REDIS_REST_URL: z.string().default(""),
   UPSTASH_REDIS_REST_TOKEN: z.string().default(""),
   QSTASH_TOKEN: z.string().default(""),
-  ALLOWED_ORIGIN: z.string().default(""),
+  FRONTEND_URL: z.string().default(""),
   POSTMARK_SERVER_TOKEN: z.string().default(""),
   POSTMARK_FROM_EMAIL: z.string().default(""),
   SEED_ADMIN_CLERK_USER_ID: z.string().default(""),

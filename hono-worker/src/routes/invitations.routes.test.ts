@@ -229,3 +229,90 @@ describe("GET /organizations/:orgId/invitations", () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe("DELETE /organizations/:orgId/invitations/:invitationId", () => {
+  it("revokes a pending invitation, and its token then fails to accept", async () => {
+    const org = await seedAdminOrg();
+    const created = await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${org.id}/invitations`, {
+        method: "POST",
+        headers: authed("admin_1", org.id),
+        body: JSON.stringify({ email: "revokeme@example.com", role: "viewer" }),
+      }),
+      testEnv({ POSTMARK_SERVER_TOKEN: "tok" }),
+      testExecutionCtx(),
+    );
+    const invite = ((await created.json()) as InvitationBody).invitation;
+
+    const res = await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${org.id}/invitations/${invite.id}`, {
+        method: "DELETE",
+        headers: authed("admin_1", org.id),
+      }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(200);
+
+    const rows = await db.select().from(invitations).where(eq(invitations.id, invite.id));
+    expect(rows[0]?.status).toBe("revoked");
+
+    // The revoked token is no longer redeemable.
+    const accept = await invitationsRoutes.fetch(
+      new Request(`http://test/invitations/${rows[0]!.token}/accept`, {
+        method: "POST",
+        headers: authed("someone_else"),
+      }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(accept.status).toBe(410);
+  });
+
+  it("403s a viewer", async () => {
+    const org = await seedAdminOrg();
+    await db
+      .insert(memberships)
+      .values({ organizationId: org.id, clerkUserId: "viewer_1", role: "viewer", status: "active" });
+    const res = await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${org.id}/invitations/00000000-0000-0000-0000-000000000001`, {
+        method: "DELETE",
+        headers: authed("viewer_1", org.id),
+      }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("404s an invitation belonging to another org", async () => {
+    const org = await seedAdminOrg();
+    const otherRows = await db.insert(organizations).values({ name: "Other", slug: "other-revoke" }).returning();
+    const other = otherRows[0];
+    if (!other) throw new Error("insert did not return a row");
+    await db
+      .insert(memberships)
+      .values({ organizationId: other.id, clerkUserId: "admin_2", role: "admin", status: "active" });
+
+    const created = await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${org.id}/invitations`, {
+        method: "POST",
+        headers: authed("admin_1", org.id),
+        body: JSON.stringify({ email: "target@example.com", role: "viewer" }),
+      }),
+      testEnv({ POSTMARK_SERVER_TOKEN: "tok" }),
+      testExecutionCtx(),
+    );
+    const invite = ((await created.json()) as InvitationBody).invitation;
+
+    const res = await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${other.id}/invitations/${invite.id}`, {
+        method: "DELETE",
+        headers: authed("admin_2", other.id),
+      }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(404);
+  });
+});

@@ -23,7 +23,7 @@ app.use(
   "*",
   cors({
     origin: (origin, c) => {
-      const allowed = c.env.ALLOWED_ORIGIN;
+      const allowed = c.env.FRONTEND_URL;
       if (c.env.NODE_ENV !== "production") return origin ?? "*";
       return allowed && origin === allowed ? origin : "";
     },
