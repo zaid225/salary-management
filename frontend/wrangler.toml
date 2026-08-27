@@ -1,0 +1,13 @@
+name = "salary-management"
+compatibility_date = "2026-08-01"
+
+# Static-asset Worker rather than Pages: same result, and it only needs the
+# workers_scripts scope. not_found_handling is the load-bearing line - this
+# is a client-routed SPA, so a deep link like /employees/<id> must serve
+# index.html instead of a 404.
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+
+[observability]
+enabled = true

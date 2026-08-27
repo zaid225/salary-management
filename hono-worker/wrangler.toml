@@ -9,17 +9,17 @@ head_sampling_rate = 1
 
 [vars]
 NODE_ENV = "production"
-FRONTEND_URL = ""
+FRONTEND_URL = "https://salary-management.zaidansari2249.workers.dev"
 
-# Commented out on purpose: an unfilled placeholder id/localConnectionString
-# makes `wrangler dev`/`deploy` crash outright (Hyperdrive parses both
-# eagerly at boot) - the opposite of every other integration in this repo,
-# which boots clean and reports `configured: false` until set up
-# (env-vars.md rule 4). Uncomment once you've run:
+# The Hyperdrive config id is a resource handle, not a credential - the
+# Postgres connection string it wraps is stored on Cloudflare's side and
+# never appears here. Created with:
 #   npx wrangler hyperdrive create salary-management-db --connection-string="<DATABASE_URL>"
-# then paste the printed id below, and put your real Postgres URL in
-# localConnectionString (not committed - only used by local `wrangler dev`).
-# [[hyperdrive]]
-# binding = "HYPERDRIVE"
-# id = "<YOUR_HYPERDRIVE_ID>"
-# localConnectionString = "<YOUR_LOCAL_DATABASE_URL>"
+#
+# For local `wrangler dev`, put your Postgres URL in .dev.vars as
+# WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE rather than adding a
+# localConnectionString here, so a real credential never lands in a committed
+# file.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "79cb481ffac641218ea8a8b6fc23400c"
