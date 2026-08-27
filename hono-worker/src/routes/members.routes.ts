@@ -3,6 +3,8 @@ import { zValidator } from "@hono/zod-validator";
 import type { AppBindings } from "../lib/context.js";
 import { requireAuth, resolveOrg, requireRole } from "../controllers/auth.middleware.js";
 import { UpdateMembershipRoleBody } from "../schemas/membership.schema.js";
+import { PaginationQuery } from "../schemas/pagination.schema.js";
+import { validateQuery } from "../lib/validate.js";
 import { listMembers, updateMemberRole, removeMember } from "../controllers/members.controller.js";
 
 export const membersRoutes = new Hono<AppBindings>();
@@ -16,7 +18,13 @@ const validatePatchRole = zValidator("json", UpdateMembershipRoleBody, (result, 
   }
 });
 
-membersRoutes.get("/organizations/:orgId/members", requireAuth, resolveOrg, listMembers);
+membersRoutes.get(
+  "/organizations/:orgId/members",
+  requireAuth,
+  resolveOrg,
+  validateQuery(PaginationQuery),
+  listMembers,
+);
 membersRoutes.patch(
   "/organizations/:orgId/members/:membershipId",
   requireAuth,

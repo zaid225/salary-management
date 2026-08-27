@@ -189,3 +189,43 @@ describe("POST /invitations/:token/accept", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("GET /organizations/:orgId/invitations", () => {
+  it("lists pending invitations for the org, paginated", async () => {
+    const org = await seedAdminOrg();
+    await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${org.id}/invitations`, {
+        method: "POST",
+        headers: authed("admin_1", org.id),
+        body: JSON.stringify({ email: "pending@example.com", role: "viewer" }),
+      }),
+      testEnv({ POSTMARK_SERVER_TOKEN: "tok" }),
+      testExecutionCtx(),
+    );
+
+    const res = await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${org.id}/invitations`, {
+        headers: authed("admin_1", org.id),
+      }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { invitations: { email: string }[]; limit: number };
+    expect(body.invitations).toHaveLength(1);
+    expect(body.invitations[0]?.email).toBe("pending@example.com");
+    expect(body.limit).toBe(25);
+  });
+
+  it("403s a non-member", async () => {
+    const org = await seedAdminOrg();
+    const res = await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${org.id}/invitations`, {
+        headers: authed("stranger", org.id),
+      }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(403);
+  });
+});

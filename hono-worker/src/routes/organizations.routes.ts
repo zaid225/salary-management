@@ -3,6 +3,8 @@ import { zValidator } from "@hono/zod-validator";
 import type { AppBindings } from "../lib/context.js";
 import { requireAuth } from "../controllers/auth.middleware.js";
 import { CreateOrganizationBody } from "../schemas/organization.schema.js";
+import { PaginationQuery } from "../schemas/pagination.schema.js";
+import { validateQuery } from "../lib/validate.js";
 import { createOrganization, listMyOrganizations } from "../controllers/organizations.controller.js";
 
 export const organizationsRoutes = new Hono<AppBindings>();
@@ -17,4 +19,4 @@ const validateCreateOrg = zValidator("json", CreateOrganizationBody, (result, c)
 });
 
 organizationsRoutes.post("/organizations", requireAuth, validateCreateOrg, createOrganization);
-organizationsRoutes.get("/organizations", requireAuth, listMyOrganizations);
+organizationsRoutes.get("/organizations", requireAuth, validateQuery(PaginationQuery), listMyOrganizations);

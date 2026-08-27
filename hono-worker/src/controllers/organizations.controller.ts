@@ -6,6 +6,7 @@ import { getDb } from "../models/db.js";
 import { organizations, memberships } from "../models/schema.js";
 import { slugify } from "../lib/slug.js";
 import type { CreateOrganizationBody } from "../schemas/organization.schema.js";
+import type { PaginationQuery } from "../schemas/pagination.schema.js";
 
 type CreateOrgIn = { in: { json: z.input<typeof CreateOrganizationBody> }; out: { json: z.infer<typeof CreateOrganizationBody> } };
 
@@ -58,19 +59,27 @@ export async function createOrganization(c: Context<AppBindings, string, CreateO
   }
 }
 
-export async function listMyOrganizations(c: Context<AppBindings>): Promise<Response> {
+type ListOrgsIn = {
+  in: { query: z.input<typeof PaginationQuery> };
+  out: { query: z.infer<typeof PaginationQuery> };
+};
+
+export async function listMyOrganizations(c: Context<AppBindings, string, ListOrgsIn>): Promise<Response> {
   const conn = getDb(c.env);
   if (!conn) return c.json({ error: { message: "Database not configured", statusCode: 503 } }, 503);
 
   const userId = c.get("userId")!;
+  const { limit, offset } = c.req.valid("query");
   try {
     const rows = await conn.db
       .select({ organization: organizations, role: memberships.role })
       .from(memberships)
       .innerJoin(organizations, eq(memberships.organizationId, organizations.id))
-      .where(and(eq(memberships.clerkUserId, userId), eq(memberships.status, "active")));
+      .where(and(eq(memberships.clerkUserId, userId), eq(memberships.status, "active")))
+      .limit(limit)
+      .offset(offset);
 
-    return c.json({ organizations: rows });
+    return c.json({ organizations: rows, limit, offset });
   } finally {
     c.executionCtx.waitUntil(conn.close());
   }

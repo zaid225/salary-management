@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll, beforeEach } from "vitest";
 import { testDb, truncateAll } from "../../test-utils/db.js";
-import { organizations, memberships, invitations } from "./schema.js";
+import { organizations, memberships, invitations, employees, salaryRecords } from "./schema.js";
 import { scopedDb } from "./scoped-db.js";
 
 const { db, client } = testDb();
@@ -82,5 +82,94 @@ describe("scopedDb", () => {
     const found = await scopedA.invitations.findPendingByEmail("pending@a.com");
     expect(found?.email).toBe("pending@a.com");
     expect(await scopedA.invitations.findPendingByEmail("pending@b.com")).toBeNull();
+  });
+});
+
+async function seedEmployeeWithSalary(
+  orgId: string,
+  employeeNumber: string,
+  amount: string,
+  currency: string,
+  effectiveDate: string,
+) {
+  const rows = await db
+    .insert(employees)
+    .values({
+      organizationId: orgId,
+      employeeNumber,
+      firstName: "Test",
+      lastName: "Employee",
+      email: `${employeeNumber}@example.com`,
+      country: "US",
+      department: "Engineering",
+      jobTitle: "Engineer",
+      level: "L3",
+      hireDate: "2023-01-01",
+    })
+    .returning();
+  const employee = rows[0];
+  if (!employee) throw new Error("insert did not return a row");
+  await db.insert(salaryRecords).values({
+    organizationId: orgId,
+    employeeId: employee.id,
+    amount,
+    currency,
+    effectiveDate,
+    reason: "hire",
+    createdBy: "user_1",
+  });
+  return employee;
+}
+
+describe("scopedDb employees/salaryRecords", () => {
+  it("lists only active employees within the organization", async () => {
+    const { orgA, orgB } = await seedTwoOrgs();
+    await seedEmployeeWithSalary(orgA.id, "EMP-0001", "80000.00", "USD", "2024-01-01");
+    await seedEmployeeWithSalary(orgB.id, "EMP-0002", "70000.00", "USD", "2024-01-01");
+
+    const listA = await scopedDb(db, orgA.id).employees.list({ limit: 25, offset: 0 });
+    expect(listA).toHaveLength(1);
+    expect(listA[0]?.employeeNumber).toBe("EMP-0001");
+  });
+
+  it("returns only the latest salary record as the current one", async () => {
+    const { orgA } = await seedTwoOrgs();
+    const employee = await seedEmployeeWithSalary(orgA.id, "EMP-0003", "80000.00", "USD", "2023-01-01");
+    await db.insert(salaryRecords).values({
+      organizationId: orgA.id,
+      employeeId: employee.id,
+      amount: "90000.00",
+      currency: "USD",
+      effectiveDate: "2024-06-01",
+      reason: "raise",
+      createdBy: "user_1",
+    });
+
+    const current = await scopedDb(db, orgA.id).salaryRecords.currentFor([employee.id]);
+    expect(current.get(employee.id)?.amount).toBe("90000.00");
+  });
+
+  it("returns full salary history for an employee, newest first", async () => {
+    const { orgA } = await seedTwoOrgs();
+    const employee = await seedEmployeeWithSalary(orgA.id, "EMP-0004", "80000.00", "USD", "2023-01-01");
+    await db.insert(salaryRecords).values({
+      organizationId: orgA.id,
+      employeeId: employee.id,
+      amount: "90000.00",
+      currency: "USD",
+      effectiveDate: "2024-06-01",
+      reason: "raise",
+      createdBy: "user_1",
+    });
+
+    const history = await scopedDb(db, orgA.id).salaryRecords.historyFor(employee.id);
+    expect(history).toHaveLength(2);
+    expect(history[0]?.amount).toBe("90000.00"); // newest first
+  });
+
+  it("never returns another organization's employee by id", async () => {
+    const { orgA, orgB } = await seedTwoOrgs();
+    const employeeA = await seedEmployeeWithSalary(orgA.id, "EMP-0005", "80000.00", "USD", "2024-01-01");
+    expect(await scopedDb(db, orgB.id).employees.getById(employeeA.id)).toBeNull();
   });
 });

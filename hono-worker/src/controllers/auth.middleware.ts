@@ -87,11 +87,15 @@ export async function resolveOrg(c: Context<AppBindings>, next: Next): Promise<R
 
     c.set("orgId", orgId);
     c.set("orgRole", membership.role as "admin" | "viewer");
+    c.set("db", conn.db);
+    // Downstream handlers (requireRole, the route's controller) run inside
+    // this try, so the connection stays open for the whole request and
+    // closes exactly once here - not once per handler that used to call
+    // getDb() itself.
+    await next();
   } finally {
     c.executionCtx.waitUntil(conn.close());
   }
-
-  await next();
 }
 
 export function requireRole(role: "admin") {

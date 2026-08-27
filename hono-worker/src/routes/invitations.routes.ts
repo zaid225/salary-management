@@ -4,7 +4,13 @@ import type { AppBindings } from "../lib/context.js";
 import { requireAuth, resolveOrg, requireRole } from "../controllers/auth.middleware.js";
 import { rateLimitByOrg } from "../controllers/rate-limit.middleware.js";
 import { InviteMemberBody } from "../schemas/invitation.schema.js";
-import { createInvitation, acceptInvitation } from "../controllers/invitations.controller.js";
+import { PaginationQuery } from "../schemas/pagination.schema.js";
+import { validateQuery } from "../lib/validate.js";
+import {
+  createInvitation,
+  acceptInvitation,
+  listInvitations,
+} from "../controllers/invitations.controller.js";
 
 export const invitationsRoutes = new Hono<AppBindings>();
 
@@ -25,5 +31,12 @@ invitationsRoutes.post(
   rateLimitByOrg(20, 3600),
   validateInvite,
   createInvitation,
+);
+invitationsRoutes.get(
+  "/organizations/:orgId/invitations",
+  requireAuth,
+  resolveOrg,
+  validateQuery(PaginationQuery),
+  listInvitations,
 );
 invitationsRoutes.post("/invitations/:token/accept", requireAuth, acceptInvitation);

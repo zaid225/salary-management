@@ -43,8 +43,11 @@ export function testEnv(overrides: Record<string, string> = {}): CloudflareBindi
 }
 
 export async function truncateAll(db: Db): Promise<void> {
+  // fx_rates is listed explicitly: nothing references it, so CASCADE from
+  // the org-scoped tables would never reach it and its seeded rows would
+  // survive into the next test file as duplicate-PK conflicts.
   await db.execute(
-    sql`TRUNCATE TABLE invitations, memberships, organizations, users RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE TABLE audit_log, salary_records, employees, fx_rates, invitations, memberships, organizations, users RESTART IDENTITY CASCADE`,
   );
 }
 

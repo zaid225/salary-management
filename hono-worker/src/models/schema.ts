@@ -7,6 +7,9 @@ import {
   unique,
   uniqueIndex,
   index,
+  date,
+  numeric,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -74,4 +77,84 @@ export const invitations = pgTable(
       .on(t.organizationId, t.email)
       .where(sql`${t.status} = 'pending'`),
   ],
+);
+
+// --- Salary-management domain, every row org-scoped (design spec §3) ---
+
+export const employees = pgTable(
+  "employees",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    employeeNumber: varchar("employee_number", { length: 32 }).notNull(),
+    firstName: varchar("first_name", { length: 100 }).notNull(),
+    lastName: varchar("last_name", { length: 100 }).notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+    country: varchar("country", { length: 2 }).notNull(), // ISO-3166-1 alpha-2
+    department: varchar("department", { length: 100 }).notNull(),
+    jobTitle: varchar("job_title", { length: 150 }).notNull(),
+    level: varchar("level", { length: 20 }).notNull(),
+    employmentStatus: varchar("employment_status", { length: 20 }).notNull().default("active"), // active | terminated
+    hireDate: date("hire_date").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("uq_employees_org_employee_number").on(t.organizationId, t.employeeNumber),
+    index("idx_employees_org_country").on(t.organizationId, t.country),
+    index("idx_employees_org_department").on(t.organizationId, t.department),
+    index("idx_employees_org_status").on(t.organizationId, t.employmentStatus),
+  ],
+);
+
+// Append-only: a raise inserts a new row, it never updates the old one, so
+// "current salary" is always the latest effective_date per employee.
+export const salaryRecords = pgTable(
+  "salary_records",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull(), // ISO-4217
+    effectiveDate: date("effective_date").notNull(),
+    reason: varchar("reason", { length: 30 }).notNull(), // hire | raise | adjustment | correction
+    createdBy: varchar("created_by", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_salary_org_employee").on(t.organizationId, t.employeeId),
+    index("idx_salary_org_employee_effective").on(t.organizationId, t.employeeId, t.effectiveDate),
+  ],
+);
+
+// Global reference data, deliberately not org-scoped.
+export const fxRates = pgTable("fx_rates", {
+  currency: varchar("currency", { length: 3 }).primaryKey(),
+  rateToUsd: numeric("rate_to_usd", { precision: 12, scale: 6 }).notNull(),
+  asOfDate: date("as_of_date").notNull(),
+});
+
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    actorClerkUserId: varchar("actor_clerk_user_id", { length: 255 }).notNull(),
+    action: varchar("action", { length: 20 }).notNull(), // create | update | delete
+    entityType: varchar("entity_type", { length: 30 }).notNull(), // employee | salary_record
+    entityId: uuid("entity_id").notNull(),
+    before: jsonb("before"),
+    after: jsonb("after"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_audit_org_entity").on(t.organizationId, t.entityType, t.entityId)],
 );
