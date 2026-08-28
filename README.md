@@ -5,7 +5,25 @@ salary history across currencies, CSV bulk import/export, live analytics, and
 a full audit trail — with organizations, roles, and invitations built on our
 own tables rather than an auth provider's org primitive.
 
+**Live app:** https://salary-management.zaidansari2249.workers.dev
+**API:** https://salary-management-api.zaidansari2249.workers.dev
+**Repository:** https://github.com/zaid225/salary-management
+
+![Dashboard](docs/screenshots/dashboard.png)
+
 Design spec: [`docs/superpowers/specs/2026-08-26-salary-management-design.md`](docs/superpowers/specs/2026-08-26-salary-management-design.md)
+
+## Tech stack
+
+| Layer | Choice | Why |
+|---|---|---|
+| API | **Hono** on **Cloudflare Workers** | Hono is a few kilobytes and has no Node-runtime assumptions, so it runs directly on the V8 isolates Workers use. The API starts in ~40 ms at the edge instead of cold-starting a container, which is what makes a per-request DB connection affordable. |
+| Database | Postgres (Supabase) via **Hyperdrive** + **Drizzle ORM** | Workers cannot hold a TCP pool across requests; Hyperdrive pools on Cloudflare's side so each isolate opens a cheap connection. Drizzle emits plain SQL with no runtime reflection, which keeps the bundle small enough for an isolate. |
+| Frontend | **React 19** + Vite + Tailwind v4 + Radix (shadcn-style) | Deployed as a static-asset Worker on the same edge network. |
+| Data layer | **TanStack Query** + **TanStack Virtual** | Server state and cache invalidation; virtualization so a 1,000-row page mounts only what is visible. |
+| Auth | **Clerk** (headless) | Identity only. Sign-in, sign-up and profile are our own UI on Clerk's hooks — no hosted components. |
+| Rate limiting | **Upstash Redis** | Sliding window on the two endpoints that cost real work: invitations and CSV import. |
+| Email | **Postmark** | The one transactional message this product sends: the invite link. |
 
 ## Architecture
 
@@ -13,7 +31,7 @@ Design spec: [`docs/superpowers/specs/2026-08-26-salary-management-design.md`](d
 hono-worker/   Hono API on Cloudflare Workers
                Postgres (Supabase) via Hyperdrive + Drizzle ORM, Clerk auth
 frontend/      React 19 + Vite + Tailwind v4 + shadcn-style UI
-               Deployed to Cloudflare Pages, calls the Worker with a Clerk token
+               Deployed as a static-asset Worker, calls the API with a Clerk token
 ```
 
 Two things shape most of the design:
@@ -80,7 +98,8 @@ headless hooks — no hosted `<SignIn/>`/`<SignUp/>` components anywhere.
 ## API
 
 All routes are under `/api`, zod-validated, paginated (`limit`/`offset`,
-default 25, max 100 — over-max is clamped, not rejected), and return errors as
+default 25; max 100, or 1000 on `/employees` — over-max is clamped, not
+rejected), and return errors as
 `{ error: { message, statusCode } }`.
 
 Everything except `/webhooks/clerk` and the org-management routes runs behind
@@ -109,6 +128,12 @@ Everything except `/webhooks/clerk` and the org-management routes runs behind
 | GET | `/employees/export` | member | CSV of the current filtered view |
 | GET | `/analytics/summary` | member | Headcount/avg/median/total USD by country, department, level |
 | GET | `/audit-log` | member | Paginated, filterable by entity |
+| GET | `/employees/facets` | member | Distinct departments/countries/levels + convertible currencies, for the form dropdowns |
+| POST | `/employees/bulk-delete` | admin | Queue a bulk termination; returns `202` with a job |
+| GET | `/jobs` · `/jobs/:id` | member | Job list, and one job with its logs |
+| POST | `/jobs/:id/advance` | admin | Process the next chunk of a job |
+| POST | `/jobs/:id/cancel` | admin | Stop further chunks |
+| POST | `/jobs/:id/run` | run token | Same runner for an unattended driver (queue callback) |
 
 A few behaviors worth knowing before poking at it:
 
@@ -123,6 +148,50 @@ A few behaviors worth knowing before poking at it:
 - **Analytics excludes employees whose currency has no FX rate** rather than
   erroring, so one unrecognized currency can't blank the dashboard.
 
+## Scaling
+
+Four things carry the load, in the order they start to matter.
+
+**Every list is bounded and indexed.** No endpoint returns an unbounded set.
+Filters run in Postgres against `organization_id`-leading composite indexes,
+so narrowing by country or department is an index range scan rather than a
+sequential one. Sorting is server-side against an explicit column allowlist,
+with an id tiebreak so rows never shuffle between pages.
+
+**Writes are batched, not looped.** CSV import was originally four queries per
+row — about 800 round trips for a 200-row file. It now does one existence
+prefetch, one multi-row upsert, one bulk salary insert and one bulk audit
+insert per batch: four queries regardless of batch size. Measured: 250 rows in
+~2.9 s against a remote database. A batch is split into "waves" so no wave
+repeats an employee number, because a multi-row upsert cannot touch the same
+conflict target twice.
+
+**Long work is a row, not a request.** A bulk termination over thousands of
+employees cannot finish inside one Worker invocation, and a browser tab is not
+a durable place to keep progress. `POST /employees/bulk-delete` returns `202`
+with a `jobs` row; the runner processes 500 rows per call, walking forward from
+a stored cursor inside a transaction that also writes the audit entries. Closing
+the tab loses nothing that has committed — reopening re-attaches to the same job
+at the same point. Re-running after a crash redoes at most one chunk and never
+double-counts, which is what makes the runner safe for a queue to retry.
+
+**The edge does the rest.** Workers scale horizontally per isolate with no pool
+to exhaust; Hyperdrive keeps the Postgres connection count flat no matter how
+many isolates are live. Upstash Redis sliding-window limits guard the two
+endpoints that cost real work (invitations, CSV import).
+
+### Where it would go next
+
+- `POST /jobs/:id/run` already accepts a per-job run token, so an external
+  queue (QStash or Cloudflare Queues) can drive jobs with no user session and
+  retry safely. Wiring that up is a credentials change, not a redesign.
+- Analytics is live SQL over an indexed table — single-digit milliseconds at
+  10k rows, ~400 ms measured across the network. Past a few hundred thousand
+  employees per org, a materialized rollup refreshed on write becomes worth its
+  staleness.
+- Read replicas would be the next step after that; every analytics and list
+  query is already read-only and org-scoped, so routing them is mechanical.
+
 ## Validation
 
 One zod schema per resource lives in `hono-worker/src/schemas/` and is
@@ -135,15 +204,23 @@ that's the actual security boundary.
 ## Testing
 
 ```bash
-cd hono-worker && npm test     # 75 tests, against a live Postgres
+cd hono-worker && npm test     # ~130 tests
 cd frontend && npm test        # component tests, jsdom
 ```
 
-Backend tests run against a real database (set `TEST_DATABASE_URL` in
-`.env.test`), not mocks — they cover auth gating, validation, soft deletes,
-transactional audit writes, the full invite lifecycle, and the case that
-matters most here: a member of org A getting a 403 rather than org B's data
-when calling org B's endpoints with a valid session.
+Two kinds of backend test. The fast ones are pure — schemas and the
+deterministic data generator, no database, no clock, ~1 s for 36 of them. The
+rest run against a real Postgres (set `TEST_DATABASE_URL` in `.env.test`)
+rather than mocks, covering auth gating, validation, soft deletes,
+transactional audit writes, the full invite lifecycle, job chunking and resume,
+and the case that matters most in a multi-tenant system: a member of org A
+getting a 403 rather than org B's data when calling org B's endpoints with a
+valid session.
+
+**`TEST_DATABASE_URL` must point at its own database.** Every test file
+`TRUNCATE`s the schema in `beforeEach`, so pointing it at the production
+database destroys real data. The harness refuses to run when the two URLs
+resolve to the same database.
 
 ## Deployment
 

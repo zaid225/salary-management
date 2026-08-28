@@ -20,6 +20,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/page-header";
+import { Avatar } from "@/components/avatar";
 import { ErrorState } from "@/components/error-state";
 
 export function MembersPage() {
@@ -100,8 +101,20 @@ export function MembersPage() {
                 {members.data.members.map((m) => (
                   <TableRow key={m.membership.id}>
                     <TableCell>
-                      <p className="font-medium">{m.user?.name ?? m.membership.clerkUserId}</p>
-                      {m.user?.email && <p className="text-xs text-muted-foreground">{m.user.email}</p>}
+                      <div className="flex items-center gap-2">
+                        <Avatar
+                          name={m.user?.name ?? m.user?.email ?? "?"}
+                          src={m.user?.avatarUrl}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">
+                            {m.user?.name ?? m.user?.email ?? m.membership.clerkUserId}
+                          </p>
+                          {m.user?.email && (
+                            <p className="truncate text-xs text-muted-foreground">{m.user.email}</p>
+                          )}
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <select

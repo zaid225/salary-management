@@ -197,6 +197,11 @@ async function importWave(
         jobTitle: sql`excluded.job_title`,
         level: sql`excluded.level`,
         hireDate: sql`excluded.hire_date`,
+        // A roster file lists the people who work here. Someone previously
+        // terminated who appears again is a rehire, so the import brings them
+        // back to active rather than silently reporting "updated" while the
+        // row stays terminated and invisible in the list.
+        employmentStatus: sql`'active'`,
         updatedAt: new Date(),
       },
     })
@@ -282,7 +287,7 @@ async function importWaveRowByRow(
         if (existing) {
           const rows = await tx2
             .update(employees)
-            .set({ ...profileValues(orgId, data), updatedAt: new Date() })
+            .set({ ...profileValues(orgId, data), employmentStatus: "active", updatedAt: new Date() })
             .where(eq(employees.id, existing.id))
             .returning();
           const after = rows[0];

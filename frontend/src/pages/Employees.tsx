@@ -1,10 +1,11 @@
 import * as React from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Link, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, ChevronsUpDown, Download, Plus, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Download, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { useEmployees } from "@/hooks/queries";
+import { useEmployees, useStartBulkDelete } from "@/hooks/queries";
 import { useOrg } from "@/lib/org-context";
-import { formatMoney } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import type { EmployeeFilters } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +16,22 @@ import { PageHeader } from "@/components/page-header";
 import { ErrorState } from "@/components/error-state";
 import { CreateEmployeeDialog } from "@/components/create-employee-dialog";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
+import { JobProgress, rememberActiveJob, readActiveJob } from "@/components/job-progress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZES = [25, 50, 100, 200, 500, 1000];
+// Below this a plain table is faster than virtualizing it.
+const VIRTUALIZE_ABOVE = 100;
+const DEFAULT_PAGE_SIZE = 25;
 
 // Filter/sort/pagination state lives in the URL, not component state -
 // shareable and bookmarkable, and it feeds the query key directly
@@ -29,11 +44,24 @@ export function EmployeesPage() {
   const [importOpen, setImportOpen] = React.useState(false);
   const [searchDraft, setSearchDraft] = React.useState(params.get("search") ?? "");
   const [exporting, setExporting] = React.useState(false);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [confirmBulk, setConfirmBulk] = React.useState(false);
+  const [confirmText, setConfirmText] = React.useState("");
+  // "Select all N matching filters" vs. the checkboxes on this page - two
+  // different targets, and the confirm dialog must say which one plainly.
+  const [selectAllMatching, setSelectAllMatching] = React.useState(false);
+  // A job started in a previous visit is picked back up here.
+  const [jobId, setJobId] = React.useState<string | null>(() => readActiveJob());
+  const startBulkDelete = useStartBulkDelete();
 
   const page = Number(params.get("page") ?? "0");
+  const pageSize = (() => {
+    const raw = Number(params.get("pageSize") ?? DEFAULT_PAGE_SIZE);
+    return PAGE_SIZES.includes(raw) ? raw : DEFAULT_PAGE_SIZE;
+  })();
   const filters: EmployeeFilters = {
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
+    limit: pageSize,
+    offset: page * pageSize,
     ...(params.get("search") ? { search: params.get("search")! } : {}),
     ...(params.get("country") ? { country: params.get("country")! } : {}),
     ...(params.get("department") ? { department: params.get("department")! } : {}),
@@ -74,6 +102,28 @@ export function EmployeesPage() {
   }
 
   const { data, isPending, isError, refetch } = useEmployees(filters);
+  const pageIds = React.useMemo(() => (data?.employees ?? []).map((e) => e.id), [data]);
+
+  // Past a few hundred rows the browser spends longer laying out DOM than the
+  // API spends fetching, so only the visible slice is mounted. Below that the
+  // plain table is cheaper than the machinery, so it stays as it was.
+  const rows = data?.employees ?? [];
+  const virtualize = rows.length > VIRTUALIZE_ABOVE;
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 57,
+    overscan: 12,
+  });
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualize && virtualItems.length > 0 ? virtualItems[0]!.start : 0;
+  const paddingBottom =
+    virtualize && virtualItems.length > 0
+      ? rowVirtualizer.getTotalSize() - virtualItems[virtualItems.length - 1]!.end
+      : 0;
+  const visibleRows = virtualize ? virtualItems.map((v) => rows[v.index]!) : rows;
+  const bulkCount = selectAllMatching ? (data?.total ?? 0) : selected.size;
 
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(params);
@@ -137,6 +187,12 @@ export function EmployeesPage() {
               <Download />
               {exporting ? "Exporting…" : "Export CSV"}
             </Button>
+            {isAdmin && bulkCount > 0 && (
+              <Button variant="destructive" size="sm" onClick={() => setConfirmBulk(true)}>
+                <Trash2 />
+                Terminate {bulkCount.toLocaleString()}
+              </Button>
+            )}
             {isAdmin && (
               <>
                 <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
@@ -152,6 +208,8 @@ export function EmployeesPage() {
           </>
         }
       />
+
+      {jobId && <JobProgress jobId={jobId} onDismiss={() => setJobId(null)} />}
 
       <form
         className="flex flex-wrap gap-2"
@@ -196,22 +254,67 @@ export function EmployeesPage() {
         )}
       </form>
 
+      {isAdmin && data && pageIds.length > 0 && pageIds.every((id) => selected.has(id)) && data.total > pageIds.length && (
+        <div className="flex items-center justify-between rounded-md border bg-muted/50 px-3 py-2 text-sm">
+          {selectAllMatching ? (
+            <span>
+              All <strong>{data.total.toLocaleString()}</strong> employees matching these filters are selected.
+            </span>
+          ) : (
+            <span>{selected.size} selected on this page.</span>
+          )}
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            onClick={() => {
+              if (selectAllMatching) {
+                setSelectAllMatching(false);
+                setSelected(new Set());
+              } else {
+                setSelectAllMatching(true);
+              }
+            }}
+          >
+            {selectAllMatching ? "Clear selection" : `Select all ${data.total.toLocaleString()} matching filters`}
+          </Button>
+        </div>
+      )}
+
       {isError ? (
         <ErrorState onRetry={() => void refetch()} />
       ) : (
-        <div className="rounded-lg border">
+        <div
+          ref={scrollRef}
+          className={cn("rounded-lg border", virtualize && "max-h-[70vh] overflow-y-auto")}
+        >
           <Table>
             <TableHeader>
               <TableRow>
+                {isAdmin && (
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all on this page"
+                      className="size-4 align-middle"
+                      checked={pageIds.length > 0 && pageIds.every((id) => selected.has(id))}
+                      onChange={(e) => {
+                        setSelectAllMatching(false);
+                        const next = new Set(selected);
+                        if (e.target.checked) pageIds.forEach((id) => next.add(id));
+                        else pageIds.forEach((id) => next.delete(id));
+                        setSelected(next);
+                      }}
+                    />
+                  </TableHead>
+                )}
                 <SortHeader column="lastName" label="Employee" />
                 <SortHeader column="employeeNumber" label="Number" />
                 <SortHeader column="department" label="Department" />
                 <SortHeader column="level" label="Level" />
                 <SortHeader column="country" label="Country" />
-                {/* Not sortable: current salary is the latest row per
-                    employee, not a column on this table, and sorting by it
-                    would need the whole history joined per page. */}
-                <TableHead className="text-right">Current salary</TableHead>
+                <SortHeader column="currentSalary" label="Current salary" align="right" />
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -221,7 +324,7 @@ export function EmployeesPage() {
                 // performance for a table the user is about to scan.
                 Array.from({ length: 8 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 7 }).map((__, j) => (
+                    {Array.from({ length: isAdmin ? 8 : 7 }).map((__, j) => (
                       <TableCell key={j}>
                         <Skeleton className="h-4 w-full" />
                       </TableCell>
@@ -230,13 +333,36 @@ export function EmployeesPage() {
                 ))
               ) : data.employees.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={isAdmin ? 8 : 7} className="py-10 text-center text-sm text-muted-foreground">
                     No employees match these filters.
                   </TableCell>
                 </TableRow>
               ) : (
-                data.employees.map((e) => (
+                <>
+                  {paddingTop > 0 && (
+                    <tr aria-hidden="true">
+                      <td colSpan={isAdmin ? 8 : 7} style={{ height: paddingTop }} />
+                    </tr>
+                  )}
+                  {visibleRows.map((e) => (
                   <TableRow key={e.id}>
+                    {isAdmin && (
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${e.firstName} ${e.lastName}`}
+                          className="size-4 align-middle"
+                          checked={selected.has(e.id)}
+                          onChange={(ev) => {
+                            setSelectAllMatching(false);
+                            const next = new Set(selected);
+                            if (ev.target.checked) next.add(e.id);
+                            else next.delete(e.id);
+                            setSelected(next);
+                          }}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <Link to={`/${orgSlug}/employees/${e.id}`} className="font-medium underline-offset-4 hover:underline">
                         {e.firstName} {e.lastName}
@@ -258,15 +384,41 @@ export function EmployeesPage() {
                       </Badge>
                     </TableCell>
                   </TableRow>
-                ))
+                  ))}
+                  {paddingBottom > 0 && (
+                    <tr aria-hidden="true">
+                      <td colSpan={isAdmin ? 8 : 7} style={{ height: paddingBottom }} />
+                    </tr>
+                  )}
+                </>
               )}
             </TableBody>
           </Table>
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Page {page + 1}</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>Rows per page</span>
+          <select
+            className="h-8 rounded-md border border-input bg-transparent px-2 text-sm"
+            value={pageSize}
+            onChange={(e) => {
+              const next = new URLSearchParams(params);
+              next.set("pageSize", e.target.value);
+              // Row 300 of the old page size is not row 300 of the new one.
+              next.delete("page");
+              setParams(next, { replace: true });
+            }}
+          >
+            {PAGE_SIZES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <span>· Page {page + 1}</span>
+        </div>
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -279,13 +431,80 @@ export function EmployeesPage() {
           <Button
             variant="outline"
             size="sm"
-            disabled={!data || data.employees.length < PAGE_SIZE}
+            disabled={!data || data.employees.length < pageSize}
             onClick={() => setParam("page", String(page + 1))}
           >
             Next
           </Button>
         </div>
       </div>
+
+      <AlertDialog
+        open={confirmBulk}
+        onOpenChange={(o) => {
+          setConfirmBulk(o);
+          if (!o) setConfirmText("");
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Terminate {bulkCount.toLocaleString()} {bulkCount === 1 ? "employee" : "employees"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              They will be marked terminated and leave the active roster. Salary history and the audit trail
+              are kept — this is not a hard delete. The work runs as a background job you can watch, leave,
+              and come back to.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {selectAllMatching && (
+            <div className="space-y-2 rounded-md border border-destructive/40 p-3">
+              <p className="text-sm font-medium text-destructive">
+                This applies to every employee matching the current filters, not just this page.
+              </p>
+              {/* Typing the word is the point: a bulk action this wide should
+                  not be one mis-aimed click away. */}
+              <label className="block text-xs text-muted-foreground" htmlFor="confirm-bulk">
+                Type <span className="font-mono font-semibold text-foreground">TERMINATE</span> to confirm
+              </label>
+              <Input
+                id="confirm-bulk"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="TERMINATE"
+                autoComplete="off"
+              />
+            </div>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={selectAllMatching && confirmText !== "TERMINATE"}
+              onClick={async () => {
+                // Select-all sends the filters, not ids: the set is defined by
+                // the query, so the job stays correct for rows the client
+                // never had on screen.
+                const payload = selectAllMatching
+                  ? {
+                      ...(filters.country ? { country: filters.country } : {}),
+                      ...(filters.department ? { department: filters.department } : {}),
+                    }
+                  : { employeeIds: [...selected] };
+                const result = await startBulkDelete.mutateAsync(payload);
+                rememberActiveJob(result.job.id);
+                setJobId(result.job.id);
+                setSelected(new Set());
+                setSelectAllMatching(false);
+                setConfirmText("");
+              }}
+            >
+              Terminate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <CreateEmployeeDialog open={createOpen} onOpenChange={setCreateOpen} />
       <ImportCsvDialog open={importOpen} onOpenChange={setImportOpen} />

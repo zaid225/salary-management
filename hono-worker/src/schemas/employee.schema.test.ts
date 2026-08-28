@@ -159,10 +159,13 @@ describe("pagination", () => {
     expect(PaginationQuery.parse({ offset: "-10" }).offset).toBe(0);
   });
 
-  it("applies the same clamping to the employee list query", () => {
+  it("applies the same clamping to the employee list query, at its own higher cap", () => {
+    // This list caps at 1000, not 100 - an HR manager genuinely wants to see
+    // hundreds of rows at once. Still clamped, never unbounded.
     const parsed = EmployeeListQuery.parse({ limit: "500", country: "US" });
-    expect(parsed.limit).toBe(100);
+    expect(parsed.limit).toBe(500);
     expect(parsed.country).toBe("US");
+    expect(EmployeeListQuery.parse({ limit: "99999" }).limit).toBe(1000);
   });
 
   it("rejects an unknown employment status filter", () => {

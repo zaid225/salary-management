@@ -46,7 +46,10 @@ export const EmployeeListQuery = z.object({
     .int()
     .optional()
     .catch(undefined)
-    .transform((n) => Math.min(Math.max(n ?? 25, 1), 100)),
+    // Employees allows a larger page than the other lists: an HR manager
+    // genuinely does want to see 500 rows at once, and this table is indexed
+    // for it. Still clamped, never unbounded.
+    .transform((n) => Math.min(Math.max(n ?? 25, 1), 1000)),
   offset: z.coerce
     .number()
     .int()
@@ -59,6 +62,17 @@ export const EmployeeListQuery = z.object({
   search: z.string().optional(),
   // Sorting is server-side: the client only ever holds one page, so sorting
   // in the browser would sort that page, not the roster.
-  sort: z.enum(["employeeNumber", "firstName", "lastName", "department", "level", "country", "hireDate"]).optional(),
+  sort: z
+    .enum([
+      "employeeNumber",
+      "firstName",
+      "lastName",
+      "department",
+      "level",
+      "country",
+      "hireDate",
+      "currentSalary",
+    ])
+    .optional(),
   order: z.enum(["asc", "desc"]).optional(),
 });

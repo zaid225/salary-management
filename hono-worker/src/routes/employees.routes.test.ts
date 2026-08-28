@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll, beforeEach } from "vitest";
 import { eq } from "drizzle-orm";
 import { testDb, testEnv, testExecutionCtx, truncateAll } from "../../test-utils/db.js";
-import { organizations, memberships, employees, salaryRecords, auditLog } from "../models/schema.js";
+import { organizations, memberships, employees, salaryRecords, auditLog, fxRates } from "../models/schema.js";
 import { employeesRoutes } from "./employees.routes.js";
 
 const { db, client } = testDb();
@@ -86,13 +86,15 @@ describe("GET /employees", () => {
   it("clamps an over-large limit instead of rejecting it", async () => {
     const { org } = await seedOrgWithEmployee();
     const res = await employeesRoutes.fetch(
-      new Request("http://test/employees?limit=500", { headers: authed("viewer_1", org.id) }),
+      new Request("http://test/employees?limit=99999", { headers: authed("viewer_1", org.id) }),
       testEnv(),
       testExecutionCtx(),
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { limit: number };
-    expect(body.limit).toBe(100);
+    // This list caps at 1000, higher than the other lists' 100 - see
+    // EmployeeListQuery for why.
+    expect(body.limit).toBe(1000);
   });
 
   it("403s a non-member", async () => {
@@ -359,5 +361,89 @@ describe("POST /employees/:id/salary", () => {
       testExecutionCtx(),
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /employees search and sorting", () => {
+  it("matches a full name typed as one string", async () => {
+    const { org } = await seedOrgWithEmployee();
+    const res = await employeesRoutes.fetch(
+      new Request("http://test/employees?search=Ada%20Lovelace", { headers: authed("viewer_1", org.id) }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    const body = (await res.json()) as { employees: { employeeNumber: string }[] };
+    expect(body.employees).toHaveLength(1);
+    expect(body.employees[0]?.employeeNumber).toBe("EMP-0001");
+  });
+
+  it("matches on last name alone and on email", async () => {
+    const { org } = await seedOrgWithEmployee();
+    for (const term of ["Lovelace", "ada@example.com"]) {
+      const res = await employeesRoutes.fetch(
+        new Request(`http://test/employees?search=${encodeURIComponent(term)}`, {
+          headers: authed("viewer_1", org.id),
+        }),
+        testEnv(),
+        testExecutionCtx(),
+      );
+      const body = (await res.json()) as { employees: unknown[] };
+      expect(body.employees, `search term: ${term}`).toHaveLength(1);
+    }
+  });
+
+  it("sorts by current salary, normalized across currencies", async () => {
+    const orgRows = await db.insert(organizations).values({ name: "ACME", slug: "acme-sort" }).returning();
+    const org = orgRows[0]!;
+    await db
+      .insert(memberships)
+      .values({ organizationId: org.id, clerkUserId: "viewer_1", role: "viewer", status: "active" });
+    await db.insert(fxRates).values([
+      { currency: "USD", rateToUsd: "1.000000", asOfDate: "2024-01-01" },
+      { currency: "GBP", rateToUsd: "2.000000", asOfDate: "2024-01-01" },
+    ]);
+
+    const emps = await db
+      .insert(employees)
+      .values([
+        { organizationId: org.id, employeeNumber: "EMP-0001", firstName: "Low", lastName: "Paid", email: "a@x.com", country: "US", department: "Eng", jobTitle: "E", level: "L1", hireDate: "2024-01-01" },
+        { organizationId: org.id, employeeNumber: "EMP-0002", firstName: "High", lastName: "Paid", email: "b@x.com", country: "GB", department: "Eng", jobTitle: "E", level: "L1", hireDate: "2024-01-01" },
+      ])
+      .returning();
+
+    // 60000 GBP at 2.0 is 120000 USD, so it outranks 100000 USD even though
+    // the raw number is smaller - that is the whole point of normalizing.
+    await db.insert(salaryRecords).values([
+      { organizationId: org.id, employeeId: emps[0]!.id, amount: "100000.00", currency: "USD", effectiveDate: "2024-01-01", reason: "hire", createdBy: "viewer_1" },
+      { organizationId: org.id, employeeId: emps[1]!.id, amount: "60000.00", currency: "GBP", effectiveDate: "2024-01-01", reason: "hire", createdBy: "viewer_1" },
+    ]);
+
+    const res = await employeesRoutes.fetch(
+      new Request("http://test/employees?sort=currentSalary&order=desc", {
+        headers: authed("viewer_1", org.id),
+      }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    const body = (await res.json()) as { employees: { employeeNumber: string }[] };
+    expect(body.employees[0]?.employeeNumber).toBe("EMP-0002");
+    expect(body.employees[1]?.employeeNumber).toBe("EMP-0001");
+  });
+
+  it("allows a page size above 100 but still clamps it", async () => {
+    const { org } = await seedOrgWithEmployee();
+    const res = await employeesRoutes.fetch(
+      new Request("http://test/employees?limit=500", { headers: authed("viewer_1", org.id) }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(((await res.json()) as { limit: number }).limit).toBe(500);
+
+    const tooBig = await employeesRoutes.fetch(
+      new Request("http://test/employees?limit=99999", { headers: authed("viewer_1", org.id) }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(((await tooBig.json()) as { limit: number }).limit).toBe(1000);
   });
 });

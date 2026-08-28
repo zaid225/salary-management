@@ -210,3 +210,37 @@ describe("POST /employees/import at volume", () => {
     expect(salariesAfter).toHaveLength(250);
   });
 });
+
+describe("re-importing a terminated employee", () => {
+  it("brings them back to active rather than leaving them terminated", async () => {
+    const org = await seedAdminOrg();
+    const row = "EMP-3000,Alan,Turing,alan@example.com,GB,Engineering,Analyst,L5,2024-01-01,110000,GBP";
+    const csv = [CSV_HEADER, row].join("\n");
+
+    await employeesRoutes.fetch(
+      new Request("http://test/employees/import", { method: "POST", headers: authed("admin_1", org.id), body: csv }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+
+    await db
+      .update(employees)
+      .set({ employmentStatus: "terminated" })
+      .where(eq(employees.employeeNumber, "EMP-3000"));
+
+    const res = await employeesRoutes.fetch(
+      new Request("http://test/employees/import", { method: "POST", headers: authed("admin_1", org.id), body: csv }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    const body = (await res.json()) as { created: number; updated: number };
+    expect(body.updated).toBe(1);
+
+    const rows = await db.select().from(employees).where(eq(employees.employeeNumber, "EMP-3000"));
+    expect(rows[0]?.employmentStatus).toBe("active");
+
+    // Rehire does not duplicate their salary history.
+    const salaries = await db.select().from(salaryRecords).where(eq(salaryRecords.organizationId, org.id));
+    expect(salaries).toHaveLength(1);
+  });
+});

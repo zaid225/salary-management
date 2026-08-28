@@ -1,8 +1,8 @@
 import type { Context } from "hono";
 import type { z } from "zod/v4";
-import { and, asc, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { AppBindings } from "../lib/context.js";
-import { employees, salaryRecords } from "../models/schema.js";
+import { employees, fxRates, salaryRecords } from "../models/schema.js";
 import { scopedDb } from "../models/scoped-db.js";
 import { writeAudit } from "../models/audit.js";
 import type {
@@ -31,11 +31,17 @@ export function employeeFilterConditions(orgId: string, f: Partial<EmployeeFilte
   if (f.country) conditions.push(eq(employees.country, f.country));
   if (f.department) conditions.push(eq(employees.department, f.department));
   if (f.search) {
+    const term = `%${f.search}%`;
     conditions.push(
       or(
-        ilike(employees.firstName, `%${f.search}%`),
-        ilike(employees.lastName, `%${f.search}%`),
-        ilike(employees.employeeNumber, `%${f.search}%`),
+        ilike(employees.firstName, term),
+        ilike(employees.lastName, term),
+        ilike(employees.employeeNumber, term),
+        ilike(employees.email, term),
+        // Searching the columns separately means "Casey Lee" matches nothing,
+        // because no single column holds both halves of a name - which is the
+        // most natural thing for someone to type.
+        sql`(${employees.firstName} || ' ' || ${employees.lastName}) ILIKE ${term}`,
       )!,
     );
   }
@@ -63,23 +69,89 @@ export async function listEmployees(c: Context<AppBindings, string, ListIn>): Pr
   // employeeNumber ascending is a stable, meaningful default; without an
   // explicit ORDER BY, Postgres may return pages in overlapping orders and
   // rows appear to jump between pages.
-  const column = SORTABLE[sort ?? "employeeNumber"];
   const direction = order === "desc" ? desc : asc;
+
+  // Current salary is not a column on this table - it is the latest
+  // salary_records row per employee - so sorting by it needs a correlated
+  // lookup. Normalized to USD so a GBP salary sorts against a USD one
+  // meaningfully; rows whose currency has no rate sort last rather than
+  // being treated as if the rate were 1.
+  const currentSalaryUsd = sql`(
+    SELECT sr.amount * fx.rate_to_usd
+    FROM salary_records sr
+    JOIN fx_rates fx ON fx.currency = sr.currency
+    WHERE sr.employee_id = ${employees.id}
+    ORDER BY sr.effective_date DESC
+    LIMIT 1
+  )`;
+
+  const orderExpression =
+    sort === "currentSalary"
+      ? order === "desc"
+        ? sql`${currentSalaryUsd} DESC NULLS LAST`
+        : sql`${currentSalaryUsd} ASC NULLS LAST`
+      : direction(SORTABLE[sort ?? "employeeNumber"]);
 
   const rows = await db
     .select()
     .from(employees)
     .where(and(...employeeFilterConditions(orgId, filters)))
-    .orderBy(direction(column), asc(employees.id))
+    .orderBy(orderExpression, asc(employees.id))
     .limit(limit)
     .offset(offset);
 
   const currentSalaries = await scopedDb(db, orgId).salaryRecords.currentFor(rows.map((r) => r.id));
 
+  // The total is what lets the UI offer "select all N matching" rather than
+  // only the rows currently on screen, and gives pagination a real end.
+  const [totalRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(employees)
+    .where(and(...employeeFilterConditions(orgId, filters)));
+
   return c.json({
     employees: rows.map((e) => ({ ...e, currentSalary: currentSalaries.get(e.id) ?? null })),
+    total: totalRow?.count ?? 0,
     limit,
     offset,
+  });
+}
+
+/**
+ * The distinct values that actually exist in this organization, so the UI can
+ * offer a dropdown instead of a free-text box that silently creates
+ * "Enginering" alongside "Engineering". Currencies come from fx_rates rather
+ * than from salaries: offering one we cannot convert would put the employee
+ * straight into the dashboard's excluded pile.
+ */
+export async function getEmployeeFacets(c: Context<AppBindings>): Promise<Response> {
+  const db = c.get("db")!;
+  const orgId = c.get("orgId")!;
+
+  const [departments, countries, levels, currencies] = await Promise.all([
+    db
+      .selectDistinct({ value: employees.department })
+      .from(employees)
+      .where(eq(employees.organizationId, orgId))
+      .orderBy(asc(employees.department)),
+    db
+      .selectDistinct({ value: employees.country })
+      .from(employees)
+      .where(eq(employees.organizationId, orgId))
+      .orderBy(asc(employees.country)),
+    db
+      .selectDistinct({ value: employees.level })
+      .from(employees)
+      .where(eq(employees.organizationId, orgId))
+      .orderBy(asc(employees.level)),
+    db.select({ value: fxRates.currency }).from(fxRates).orderBy(asc(fxRates.currency)),
+  ]);
+
+  return c.json({
+    departments: departments.map((r) => r.value),
+    countries: countries.map((r) => r.value),
+    levels: levels.map((r) => r.value),
+    currencies: currencies.map((r) => r.value),
   });
 }
 

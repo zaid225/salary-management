@@ -17,6 +17,7 @@ import {
   updateEmployee,
   deleteEmployee,
   addSalaryRecord,
+  getEmployeeFacets,
 } from "../controllers/employees.controller.js";
 import { importEmployeesCsv, exportEmployeesCsv } from "../controllers/csv.controller.js";
 
@@ -46,6 +47,9 @@ employeesRoutes.post(
   rateLimitByOrg(10, 3600),
   importEmployeesCsv,
 );
+
+// Registered before /employees/:id so "facets" is never read as an id.
+employeesRoutes.get("/employees/facets", requireAuth, resolveOrg, getEmployeeFacets);
 
 employeesRoutes.get("/employees", requireAuth, resolveOrg, validateQuery(EmployeeListQuery), listEmployees);
 employeesRoutes.post(

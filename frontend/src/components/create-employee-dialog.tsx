@@ -6,9 +6,10 @@ import type { z } from "zod/v4";
 // re-declared, so a rule can never drift between client and server
 // (design spec §6: one validation source, three entry points).
 import { CreateEmployeeSchema } from "@shared/employee.schema";
-import { useCreateEmployee } from "@/hooks/queries";
+import { useCreateEmployee, useFacets } from "@/hooks/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ComboInput, COUNTRY_OPTIONS, NativeSelect } from "@/components/combo-field";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -29,6 +30,7 @@ export function CreateEmployeeDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const createEmployee = useCreateEmployee();
+  const { data: facets } = useFacets();
   const {
     register,
     handleSubmit,
@@ -86,7 +88,12 @@ export function CreateEmployeeDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Department" error={errors.department?.message}>
-              <Input placeholder="Engineering" {...register("department")} />
+              <ComboInput
+                listId="departments-list"
+                options={facets?.departments ?? []}
+                placeholder="Engineering"
+                {...register("department")}
+              />
             </Field>
             <Field label="Job title" error={errors.jobTitle?.message}>
               <Input placeholder="Senior Engineer" {...register("jobTitle")} />
@@ -94,10 +101,22 @@ export function CreateEmployeeDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Level" error={errors.level?.message}>
-              <Input placeholder="L3" {...register("level")} />
+              <ComboInput
+                listId="levels-list"
+                options={facets?.levels ?? []}
+                placeholder="L3"
+                {...register("level")}
+              />
             </Field>
             <Field label="Country" error={errors.country?.message}>
-              <Input placeholder="US" maxLength={2} {...register("country")} />
+              <NativeSelect {...register("country")}>
+                <option value="">Select a country</option>
+                {COUNTRY_OPTIONS.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.label}
+                  </option>
+                ))}
+              </NativeSelect>
             </Field>
           </div>
 
@@ -108,7 +127,17 @@ export function CreateEmployeeDialog({
                 <Input type="number" step="0.01" placeholder="120000" {...register("salary.amount")} />
               </Field>
               <Field label="Currency" error={errors.salary?.currency?.message}>
-                <Input placeholder="USD" maxLength={3} {...register("salary.currency")} />
+                {/* Only currencies with a recorded FX rate: offering one we
+                    cannot convert would drop this employee straight out of
+                    every dashboard figure. */}
+                <NativeSelect {...register("salary.currency")}>
+                  <option value="">Select a currency</option>
+                  {(facets?.currencies ?? []).map((cur) => (
+                    <option key={cur} value={cur}>
+                      {cur}
+                    </option>
+                  ))}
+                </NativeSelect>
               </Field>
             </div>
             <Field label="Effective date" error={errors.salary?.effectiveDate?.message}>

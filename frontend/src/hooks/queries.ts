@@ -66,6 +66,23 @@ export function useEmployee(id: string | undefined) {
   });
 }
 
+export interface Facets {
+  departments: string[];
+  countries: string[];
+  levels: string[];
+  currencies: string[];
+}
+
+export function useFacets() {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["facets", activeOrgId ?? ""],
+    queryFn: () => api.request<Facets>("/api/employees/facets", { orgId: activeOrgId }),
+    enabled: Boolean(activeOrgId),
+    staleTime: 60_000,
+  });
+}
+
 export function useAnalytics() {
   const { api, activeOrgId } = useOrg();
   return useQuery({
@@ -279,6 +296,86 @@ export function useRemoveMember() {
     {
       successMessage: () => "Member removed",
       invalidate: (orgId) => [["members", orgId]],
+    },
+  );
+}
+
+export interface JobRow {
+  id: string;
+  type: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  error: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+export interface JobLogRow {
+  id: string;
+  level: string;
+  message: string;
+  createdAt: string;
+}
+
+export function useJob(jobId: string | null) {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["job", activeOrgId ?? "", jobId ?? ""],
+    queryFn: () => api.request<{ job: JobRow; logs: JobLogRow[] }>(`/api/jobs/${jobId}`, { orgId: activeOrgId }),
+    enabled: Boolean(activeOrgId && jobId),
+    // While a job is running the row is the only progress signal there is.
+    refetchInterval: (query) => {
+      const status = query.state.data?.job.status;
+      return status === "queued" || status === "running" ? 1500 : false;
+    },
+  });
+}
+
+export function useStartBulkDelete() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    (body: { employeeIds?: string[]; country?: string; department?: string }, { orgId }) =>
+      api.request<{ job: JobRow }>("/api/employees/bulk-delete", { method: "POST", body, orgId }),
+    {
+      successMessage: (result) => `Queued termination of ${result.job.total} employees`,
+      invalidate: (orgId) => [["jobs", orgId]],
+    },
+  );
+}
+
+export function useAdvanceJob() {
+  const { api, activeOrgId } = useOrg();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      api.request<{ done: boolean; job: JobRow }>(`/api/jobs/${jobId}/advance`, {
+        method: "POST",
+        orgId: activeOrgId,
+      }),
+    onSuccess: (result) => {
+      if (result.done && activeOrgId) {
+        void queryClient.invalidateQueries({ queryKey: ["employees", activeOrgId] });
+        void queryClient.invalidateQueries({ queryKey: ["analytics-summary", activeOrgId] });
+        void queryClient.invalidateQueries({ queryKey: ["audit-log", activeOrgId] });
+      }
+    },
+    // Errors surface through the job row's own status, so no toast here -
+    // one failing chunk should not spam a toast per poll.
+    onError: () => {},
+  });
+}
+
+export function useCancelJob() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    (jobId: string, { orgId }) =>
+      api.request<{ ok: true }>(`/api/jobs/${jobId}/cancel`, { method: "POST", orgId }),
+    {
+      successMessage: () => "Job cancelled",
+      invalidate: (orgId) => [["job", orgId], ["jobs", orgId], ["employees", orgId]],
     },
   );
 }

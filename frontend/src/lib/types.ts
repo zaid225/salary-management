@@ -53,6 +53,7 @@ export interface EmployeeWithSalary extends Employee {
 
 export interface EmployeeListResponse {
   employees: EmployeeWithSalary[];
+  total: number;
   limit: number;
   offset: number;
 }

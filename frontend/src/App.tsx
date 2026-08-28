@@ -10,12 +10,13 @@ import { SignInPage } from "@/pages/SignIn";
 import { SignUpPage } from "@/pages/SignUp";
 import { SsoCallbackPage } from "@/pages/SsoCallback";
 import { OnboardingPage } from "@/pages/Onboarding";
-import { AcceptInvitePage } from "@/pages/AcceptInvite";
+import { AcceptInvitePage, takePendingInvite } from "@/pages/AcceptInvite";
 import { DashboardPage } from "@/pages/Dashboard";
 import { EmployeesPage } from "@/pages/Employees";
 import { EmployeeDetailPage } from "@/pages/EmployeeDetail";
 import { MembersPage } from "@/pages/Members";
 import { AuditLogPage } from "@/pages/AuditLog";
+import { ProfilePage } from "@/pages/Profile";
 
 export default function App() {
   return (
@@ -24,7 +25,10 @@ export default function App() {
       <Route path="/sign-up/*" element={<PublicOnly><SignUpPage /></PublicOnly>} />
       <Route path="/sso-callback" element={<SsoCallbackPage />} />
 
-      <Route path="/accept-invite/:token" element={<RequireAuth><AcceptInvitePage /></RequireAuth>} />
+      {/* Public on purpose: an invitation lands in the inbox of someone who
+          may not have an account yet. The page itself handles the signed-out
+          case and preserves the token across sign-in. */}
+      <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
       <Route path="/onboarding" element={<RequireAuth><OnboardingPage /></RequireAuth>} />
 
       {/* The organization is part of the URL, so a link to a page is a link
@@ -36,6 +40,7 @@ export default function App() {
         <Route path="employees/:id" element={<EmployeeDetailPage />} />
         <Route path="members" element={<MembersPage />} />
         <Route path="audit-log" element={<AuditLogPage />} />
+        <Route path="profile" element={<ProfilePage />} />
       </Route>
 
       {/* A successful sign-in always resolves to somewhere real (§5 step 2). */}
@@ -71,6 +76,13 @@ function PostAuthGate() {
 
   if (!isLoaded || (isSignedIn && isLoading)) return <LoadingScreen />;
   if (!isSignedIn) return <Navigate to="/sign-in" replace />;
+
+  // Someone who arrived from an invitation link and had to authenticate first
+  // gets taken back to it, rather than dumped on the onboarding gate being
+  // asked to create an organization they were already invited to.
+  const pendingInvite = takePendingInvite();
+  if (pendingInvite) return <Navigate to={`/accept-invite/${pendingInvite}`} replace />;
+
   if (memberships.length === 0 || !defaultOrgSlug) return <Navigate to="/onboarding" replace />;
   return <Navigate to={`/${defaultOrgSlug}/dashboard`} replace />;
 }

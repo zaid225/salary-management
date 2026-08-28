@@ -8,6 +8,11 @@ const mutateAsync = vi.fn();
 
 vi.mock("@/hooks/queries", () => ({
   useCreateEmployee: () => ({ mutateAsync, isPending: false }),
+  // The dialog reads this org's existing departments/levels/currencies to
+  // populate its dropdowns; the values themselves are irrelevant here.
+  useFacets: () => ({
+    data: { departments: ["Engineering"], countries: ["US"], levels: ["L3"], currencies: ["USD"] },
+  }),
 }));
 
 function renderDialog() {
@@ -61,9 +66,9 @@ describe("CreateEmployeeDialog", () => {
     await user.type(screen.getByLabelText("Department"), "Engineering");
     await user.type(screen.getByLabelText("Job title"), "Engineer");
     await user.type(screen.getByLabelText("Level"), "L4");
-    await user.type(screen.getByLabelText("Country"), "US");
+    await user.selectOptions(screen.getByLabelText("Country"), "US");
     await user.type(screen.getByLabelText("Amount"), "120000");
-    await user.type(screen.getByLabelText("Currency"), "USD");
+    await user.selectOptions(screen.getByLabelText("Currency"), "USD");
     await user.type(screen.getByLabelText("Effective date"), "2024-01-01");
 
     await user.click(screen.getByRole("button", { name: /create employee/i }));

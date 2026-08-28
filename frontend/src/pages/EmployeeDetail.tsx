@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod/v4";
 import { AddSalaryRecordSchema } from "@shared/employee.schema";
 import { ArrowLeft } from "lucide-react";
-import { useAddSalaryRecord, useEmployee, useTerminateEmployee } from "@/hooks/queries";
+import { useAddSalaryRecord, useEmployee, useFacets, useTerminateEmployee } from "@/hooks/queries";
 import { useOrg } from "@/lib/org-context";
 import { formatMoney } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ErrorState } from "@/components/error-state";
 import { Field } from "@/components/create-employee-dialog";
+import { NativeSelect } from "@/components/combo-field";
 
 type SalaryForm = z.input<typeof AddSalaryRecordSchema>;
 
@@ -154,6 +155,7 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 
 function AddSalaryForm({ employeeId }: { employeeId: string }) {
   const addSalary = useAddSalaryRecord(employeeId);
+  const { data: facets } = useFacets();
   const {
     register,
     handleSubmit,
@@ -182,21 +184,25 @@ function AddSalaryForm({ employeeId }: { employeeId: string }) {
             <Input type="number" step="0.01" placeholder="95000" {...register("amount")} />
           </Field>
           <Field label="Currency" error={errors.currency?.message}>
-            <Input placeholder="USD" maxLength={3} {...register("currency")} />
+            <NativeSelect {...register("currency")}>
+              <option value="">Select</option>
+              {(facets?.currencies ?? []).map((cur) => (
+                <option key={cur} value={cur}>
+                  {cur}
+                </option>
+              ))}
+            </NativeSelect>
           </Field>
           <Field label="Effective date" error={errors.effectiveDate?.message}>
             <Input type="date" {...register("effectiveDate")} />
           </Field>
           <Field label="Reason" error={errors.reason?.message}>
-            <select
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-              {...register("reason")}
-            >
+            <NativeSelect {...register("reason")}>
               <option value="raise">raise</option>
               <option value="adjustment">adjustment</option>
               <option value="correction">correction</option>
               <option value="hire">hire</option>
-            </select>
+            </NativeSelect>
           </Field>
           <div className="sm:col-span-4">
             <Button type="submit" disabled={isSubmitting}>

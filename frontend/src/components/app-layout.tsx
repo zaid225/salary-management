@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { OrgSwitcher } from "@/components/org-switcher";
+import { Logo, LogoWordmark } from "@/components/logo";
+import { Avatar } from "@/components/avatar";
 
 // Paths are relative to the org segment - see NavLink's `to` below.
 const NAV = [
@@ -65,8 +67,22 @@ export function AppLayout() {
 
   const sidebar = (
     <>
-      <div className={cn("flex items-center gap-2 p-4", collapsed && "justify-center px-2")}>
-        {!collapsed && <p className="flex-1 truncate text-sm font-semibold tracking-tight">Salary Management</p>}
+      {/* Collapsed: the logo and the toggle button were squeezed side by
+          side into a 64px rail and visually collided. The toggle now sits on
+          its own row underneath, and the logo alone stays as a clean mark. */}
+      <div className={cn("flex items-center gap-2 p-4", collapsed && "flex-col gap-2 px-2")}>
+        <div className={cn("flex min-w-0 flex-1 items-center", collapsed ? "justify-center" : "gap-2")}>
+          {collapsed ? <Logo className="size-6" /> : <LogoWordmark className="flex-1" />}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 shrink-0 md:hidden"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Close menu"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
         <Button
           variant="ghost"
           size="icon"
@@ -76,15 +92,6 @@ export function AppLayout() {
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 shrink-0 md:hidden"
-          onClick={() => setMobileOpen(false)}
-          aria-label="Close menu"
-        >
-          <X className="size-4" />
         </Button>
       </div>
 
@@ -119,14 +126,32 @@ export function AppLayout() {
       </nav>
 
       <div className="shrink-0 space-y-2 border-t p-3">
-        {!collapsed && (
-          <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-xs text-muted-foreground">
-              {user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? "Signed in"}
+        <NavLink
+          to={`/${orgSlug}/profile`}
+          title={collapsed ? "Your profile" : undefined}
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-2 rounded-md p-1.5 transition-colors hover:bg-sidebar-accent/60",
+              collapsed && "justify-center",
+              isActive && "bg-sidebar-accent",
+            )
+          }
+        >
+          <Avatar
+            name={user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "?"}
+            src={user?.imageUrl}
+            hasImage={user?.hasImage}
+            className="size-7"
+          />
+          {!collapsed && (
+            <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+              <span className="truncate text-xs text-muted-foreground">
+                {user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "Signed in"}
+              </span>
+              {role && <Badge variant={role === "admin" ? "default" : "secondary"}>{role}</Badge>}
             </span>
-            {role && <Badge variant={role === "admin" ? "default" : "secondary"}>{role}</Badge>}
-          </div>
-        )}
+          )}
+        </NavLink>
         <Button
           variant="ghost"
           size="sm"
@@ -173,7 +198,7 @@ export function AppLayout() {
           <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open menu">
             <Menu className="size-4" />
           </Button>
-          <span className="text-sm font-semibold tracking-tight">Salary Management</span>
+          <LogoWordmark />
         </header>
 
         <main className="flex-1 overflow-y-auto">
