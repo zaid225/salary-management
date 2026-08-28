@@ -24,6 +24,10 @@ const EnvSchema = z.object({
   POSTMARK_SERVER_TOKEN: z.string().default(""),
   POSTMARK_FROM_EMAIL: z.string().default(""),
   SEED_ADMIN_CLERK_USER_ID: z.string().default(""),
+  // Base64-encoded 32-byte AES-GCM key for pii_tokens.ciphertext. Unset in
+  // dev - the tokenizer still degrades cleanly (see lib/pii.ts) rather than
+  // crashing boot, same contract as every other optional integration here.
+  PII_ENCRYPTION_KEY: z.string().default(""),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

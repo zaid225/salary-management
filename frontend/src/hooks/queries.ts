@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useOrg } from "@/lib/org-context";
 import { ApiError } from "@/lib/api";
 import type {
+  AiProposal,
   AnalyticsSummary,
   AuditLogResponse,
   EmployeeDetailResponse,
@@ -10,6 +11,7 @@ import type {
   EmployeeListResponse,
   ImportResult,
   InvitationsResponse,
+  LedgerEvent,
   MembersResponse,
   Organization,
   Role,
@@ -80,6 +82,27 @@ export function useFacets() {
     queryFn: () => api.request<Facets>("/api/employees/facets", { orgId: activeOrgId }),
     enabled: Boolean(activeOrgId),
     staleTime: 60_000,
+  });
+}
+
+// Payroll ledger is a scaffold surface, not wired into the salary domain's
+// pagination/filter machinery yet - a flat list, same query-key discipline
+// (org id leading) as everything else.
+export function useLedgerEvents() {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["ledger-events", activeOrgId ?? ""],
+    queryFn: () => api.request<{ events: LedgerEvent[] }>("/api/ledger-events", { orgId: activeOrgId }),
+    enabled: Boolean(activeOrgId),
+  });
+}
+
+export function useAiProposals() {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["ai-proposals", activeOrgId ?? ""],
+    queryFn: () => api.request<{ proposals: AiProposal[] }>("/api/ai-proposals", { orgId: activeOrgId }),
+    enabled: Boolean(activeOrgId),
   });
 }
 

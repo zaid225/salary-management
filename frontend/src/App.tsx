@@ -17,6 +17,7 @@ import { EmployeeDetailPage } from "@/pages/EmployeeDetail";
 import { MembersPage } from "@/pages/Members";
 import { AuditLogPage } from "@/pages/AuditLog";
 import { ProfilePage } from "@/pages/Profile";
+import { LedgerPage } from "@/pages/Ledger";
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="members" element={<MembersPage />} />
         <Route path="audit-log" element={<AuditLogPage />} />
         <Route path="profile" element={<ProfilePage />} />
+        <Route path="ledger" element={<LedgerPage />} />
       </Route>
 
       {/* A successful sign-in always resolves to somewhere real (§5 step 2). */}

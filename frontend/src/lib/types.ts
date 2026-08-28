@@ -159,3 +159,34 @@ export interface EmployeeFilters {
   limit?: number;
   offset?: number;
 }
+
+// --- Payroll/treasury scaffold ---
+
+export interface LedgerEvent {
+  id: string;
+  organizationId: string;
+  sequence: string; // bigserial arrives as a string over JSON
+  eventType: string;
+  entityType: string;
+  entityId: string;
+  amountMinor: number | null;
+  currency: string | null;
+  payload: unknown;
+  reversesEventId: string | null;
+  actorClerkUserId: string;
+  createdAt: string;
+}
+
+export interface AiProposal {
+  id: string;
+  organizationId: string;
+  proposalType: string;
+  status: "pending" | "approved" | "rejected";
+  jobId: string | null;
+  diff: unknown;
+  modelUsed: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  signOffHash: string | null;
+  createdAt: string;
+}

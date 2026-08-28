@@ -62,6 +62,7 @@ export function testEnv(overrides: Record<string, string> = {}): CloudflareBindi
     UPSTASH_REDIS_REST_TOKEN: "",
     QSTASH_TOKEN: "",
     FRONTEND_URL: "",
+    PII_ENCRYPTION_KEY: "",
     POSTMARK_SERVER_TOKEN: "",
     POSTMARK_FROM_EMAIL: "",
     SEED_ADMIN_CLERK_USER_ID: "",
@@ -75,7 +76,7 @@ export async function truncateAll(db: Db): Promise<void> {
   // the org-scoped tables would never reach it and its seeded rows would
   // survive into the next test file as duplicate-PK conflicts.
   await db.execute(
-    sql`TRUNCATE TABLE job_logs, jobs, audit_log, salary_records, employees, fx_rates, invitations, memberships, organizations, users RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE TABLE ai_proposals, pii_tokens, ledger_balances, ledger_events, job_logs, jobs, audit_log, salary_records, employees, fx_rates, invitations, memberships, organizations, users RESTART IDENTITY CASCADE`,
   );
 }
 

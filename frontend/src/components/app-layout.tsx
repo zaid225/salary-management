@@ -4,6 +4,7 @@ import { useClerk, useUser } from "@clerk/clerk-react";
 import {
   BarChart3,
   ClipboardList,
+  Landmark,
   LogOut,
   Menu,
   PanelLeftClose,
@@ -26,6 +27,7 @@ const NAV = [
   { to: "employees", label: "Employees", icon: Users },
   { to: "members", label: "Members", icon: UsersRound, adminOnly: true },
   { to: "audit-log", label: "Audit log", icon: ClipboardList },
+  { to: "ledger", label: "Ledger", icon: Landmark },
 ];
 
 const COLLAPSED_KEY = "sidebarCollapsed";

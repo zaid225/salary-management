@@ -210,3 +210,6 @@ export const jobLogs = pgTable(
   },
   (t) => [index("idx_job_logs_job").on(t.jobId, t.createdAt)],
 );
+
+// --- Payroll/treasury domain, kept in its own file (schema.payroll.ts) ---
+export * from "./schema.payroll.js";
