@@ -10,6 +10,12 @@ own tables rather than an auth provider's org primitive.
 **Repository:** https://github.com/zaid225/salary-management
 **Demo video:** https://www.loom.com/share/9daddd06edc94d5fb48e6397f7083b94
 
+> **Note on commit history:** commits before 2026-08-21 are leftover Fastify/
+> Vercel scaffolding from an earlier, unrelated prototype — superseded and
+> unused by this project (see "Out-of-repo housekeeping" in the design spec).
+> The salary-management work starts at commit `57b2f92` ("Add salary
+> management design spec") onward.
+
 ![Dashboard](docs/screenshots/dashboard.png)
 
 Design spec: [`docs/superpowers/specs/2026-08-26-salary-management-design.md`](docs/superpowers/specs/2026-08-26-salary-management-design.md)
