@@ -8,6 +8,7 @@ own tables rather than an auth provider's org primitive.
 **Live app:** https://salary-management.zaidansari2249.workers.dev
 **API:** https://salary-management-api.zaidansari2249.workers.dev
 **Repository:** https://github.com/zaid225/salary-management
+**Demo video:** https://www.loom.com/share/9daddd06edc94d5fb48e6397f7083b94
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
