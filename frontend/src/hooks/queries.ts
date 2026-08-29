@@ -15,6 +15,7 @@ import type {
   EwaRequest,
   AttendanceResponse,
   TreasuryForecast,
+  TlcCompareResponse,
   LedgerEvent,
   MembersResponse,
   PayrollRun,
@@ -285,6 +286,18 @@ export function useTreasuryForecast(startingCashBalanceMinor: number | null) {
         { orgId: activeOrgId },
       ),
     enabled: Boolean(activeOrgId && startingCashBalanceMinor !== null && !Number.isNaN(startingCashBalanceMinor)),
+  });
+}
+
+// --- Global Total Landed Cost modeler ---
+
+export function useTlcCompare(budgetUsdMinor: number | null) {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["tlc-compare", activeOrgId ?? "", budgetUsdMinor ?? 0],
+    queryFn: () =>
+      api.request<TlcCompareResponse>(`/api/tlc/compare?budgetUsdMinor=${budgetUsdMinor}`, { orgId: activeOrgId }),
+    enabled: Boolean(activeOrgId && budgetUsdMinor !== null && !Number.isNaN(budgetUsdMinor)),
   });
 }
 

@@ -267,6 +267,30 @@ export interface TreasuryForecast {
   };
 }
 
+// --- Global Total Landed Cost modeler ---
+
+export interface TlcContribution {
+  type: string;
+  amountMinor: number;
+}
+
+export interface TlcJurisdictionResult {
+  jurisdiction: string;
+  currency: string;
+  missingFxRate: boolean;
+  error?: string;
+  grossLocalMinor?: number;
+  employerContributions?: TlcContribution[];
+  totalEmployerContributionsLocalMinor?: number;
+  totalLandedCostLocalMinor?: number;
+  totalLandedCostUsdMinor?: number;
+}
+
+export interface TlcCompareResponse {
+  budgetUsdMinor: number;
+  results: TlcJurisdictionResult[];
+}
+
 // --- HRIS attendance ---
 
 export interface TimeEntry {

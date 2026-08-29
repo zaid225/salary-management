@@ -18,6 +18,7 @@ import { ewaRoutes } from "./routes/ewa.routes.js";
 import { hrisRoutes } from "./routes/hris.routes.js";
 import { taxRulesRoutes } from "./routes/tax-rules.routes.js";
 import { treasuryRoutes } from "./routes/treasury.routes.js";
+import { tlcRoutes } from "./routes/tlc.routes.js";
 
 const app = new Hono<AppBindings>();
 
@@ -58,5 +59,6 @@ app.route("/api", ewaRoutes);
 app.route("/api", hrisRoutes);
 app.route("/api", taxRulesRoutes);
 app.route("/api", treasuryRoutes);
+app.route("/api", tlcRoutes);
 
 export default app;

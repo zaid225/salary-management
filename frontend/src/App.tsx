@@ -22,6 +22,7 @@ import { PayrollRunsPage, PayrollRunDetailPage } from "@/pages/PayrollRuns";
 import { AiProposalsPage } from "@/pages/AiProposals";
 import { EwaPage } from "@/pages/Ewa";
 import { TreasuryPage } from "@/pages/Treasury";
+import { TotalLandedCostPage } from "@/pages/TotalLandedCost";
 
 export default function App() {
   return (
@@ -52,6 +53,7 @@ export default function App() {
         <Route path="ai-proposals" element={<AiProposalsPage />} />
         <Route path="ewa" element={<EwaPage />} />
         <Route path="treasury" element={<TreasuryPage />} />
+        <Route path="total-landed-cost" element={<TotalLandedCostPage />} />
       </Route>
 
       {/* A successful sign-in always resolves to somewhere real (§5 step 2). */}

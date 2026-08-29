@@ -4,6 +4,7 @@ import { useClerk, useUser } from "@clerk/clerk-react";
 import {
   BarChart3,
   ClipboardList,
+  Globe2,
   Landmark,
   Sparkles,
   TrendingUp,
@@ -36,6 +37,7 @@ const NAV = [
   { to: "ai-proposals", label: "AI proposals", icon: Sparkles },
   { to: "ewa", label: "Earned wage access", icon: HandCoins },
   { to: "treasury", label: "Treasury forecast", icon: TrendingUp },
+  { to: "total-landed-cost", label: "Total landed cost", icon: Globe2 },
 ];
 
 const COLLAPSED_KEY = "sidebarCollapsed";
