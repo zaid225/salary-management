@@ -14,6 +14,7 @@ import type {
   EwaAccrual,
   EwaRequest,
   AttendanceResponse,
+  TreasuryForecast,
   LedgerEvent,
   MembersResponse,
   PayrollRun,
@@ -269,6 +270,21 @@ export function useEwaAccrual(employeeId: string | null, periodStart: string, pe
         { orgId: activeOrgId },
       ),
     enabled: Boolean(activeOrgId && employeeId && periodStart && periodEnd),
+  });
+}
+
+// --- Treasury forecast ---
+
+export function useTreasuryForecast(startingCashBalanceMinor: number | null) {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["treasury-forecast", activeOrgId ?? "", startingCashBalanceMinor ?? 0],
+    queryFn: () =>
+      api.request<TreasuryForecast>(
+        `/api/treasury/forecast?startingCashBalanceMinor=${startingCashBalanceMinor}`,
+        { orgId: activeOrgId },
+      ),
+    enabled: Boolean(activeOrgId && startingCashBalanceMinor !== null && !Number.isNaN(startingCashBalanceMinor)),
   });
 }
 

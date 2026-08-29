@@ -246,6 +246,27 @@ export interface EwaAccrual {
   accrualSource: "hours" | "calendar";
 }
 
+// --- Treasury forecast ---
+
+export interface TreasuryForecast {
+  projectedBalanceMinor: number;
+  stressTestBalanceMinor: number;
+  shortfallMinor: number;
+  stressShortfallMinor: number;
+  atRisk: boolean;
+  stressAtRisk: boolean;
+  inputs: {
+    startingCashBalanceMinor: number;
+    knownObligationsMinor: number;
+    pendingEwaMinor: number;
+    potentialAdditionalEwaMinor: number;
+    periodStart: string;
+    periodEnd: string;
+    calculatedRunCount: number;
+    pendingEwaCount: number;
+  };
+}
+
 // --- HRIS attendance ---
 
 export interface TimeEntry {
