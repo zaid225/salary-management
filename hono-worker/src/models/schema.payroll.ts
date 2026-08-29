@@ -28,7 +28,12 @@ export const ledgerEvents = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id),
-    sequence: bigserial("sequence", { mode: "bigint" }).notNull(), // total order per org
+    // mode: "number", not "bigint" - a BigInt here isn't JSON-serializable
+    // (Hono's c.json() calls JSON.stringify, which throws on a BigInt), and
+    // this app will never realistically approach 2^53 ledger events for one
+    // org. Bit for bit still a bigserial column in Postgres; only how
+    // Drizzle parses the value in JS changes.
+    sequence: bigserial("sequence", { mode: "number" }).notNull(), // total order per org
     eventType: varchar("event_type", { length: 50 }).notNull(), // clock_in | tax_change | paycheck_issued | ewa_advance | reversal
     entityType: varchar("entity_type", { length: 30 }).notNull(), // employee | payroll_run | ewa_request
     entityId: uuid("entity_id").notNull(),

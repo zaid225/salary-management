@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll, beforeEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { testDb, testEnv, testExecutionCtx, truncateAll } from "../../test-utils/db.js";
-import { organizations, memberships, employees, salaryRecords, aiProposals, piiTokens } from "../models/schema.js";
+import { organizations, memberships, employees, salaryRecords, aiProposals, piiTokens, ledgerEvents } from "../models/schema.js";
 import { payrollRoutes } from "./payroll.routes.js";
 
 const { db, client } = testDb();
@@ -172,5 +172,40 @@ describe("POST /ai-proposals/:proposalId/review", () => {
       testExecutionCtx(),
     );
     expect(again.status).toBe(409);
+  });
+});
+
+describe("GET /ledger-events", () => {
+  it("returns real rows over JSON without 500ing on the bigserial sequence column", async () => {
+    // Regression test: `sequence` is a bigserial column - the wrong Drizzle
+    // column mode ("bigint" instead of "number") makes it come back as a
+    // native BigInt, which JSON.stringify (what c.json() uses under the
+    // hood) throws on. Every other test in this suite reads ledgerEvents
+    // directly via db.select(), which never exercises JSON.stringify, so
+    // this bug shipped a full day before anything caught it - this test
+    // exists specifically to close that gap by asserting on the parsed
+    // HTTP response, not a raw DB row.
+    const { org } = await seedOrgWithEmployee();
+    await db.insert(ledgerEvents).values({
+      organizationId: org.id,
+      eventType: "paycheck_issued",
+      entityType: "payroll_run",
+      entityId: org.id, // arbitrary uuid for this test's purposes
+      amountMinor: 500_00,
+      currency: "USD",
+      payload: { note: "test" },
+      actorClerkUserId: "admin_1",
+    });
+
+    const res = await payrollRoutes.fetch(
+      new Request("http://test/ledger-events", { headers: authed("admin_1", org.id) }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { events: { sequence: number }[] };
+    expect(body.events).toHaveLength(1);
+    expect(typeof body.events[0]!.sequence).toBe("number");
+    expect(body.events[0]!.sequence).toBeGreaterThan(0);
   });
 });
