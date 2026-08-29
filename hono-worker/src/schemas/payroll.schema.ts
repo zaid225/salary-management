@@ -18,7 +18,7 @@ export const CreatePayrollRunBody = z.object({
   // Every active employee in this run is computed under the same
   // jurisdiction for this scaffold pass - a real system would derive it
   // per-employee from their country/state, once more jurisdictions exist.
-  jurisdiction: z.enum(["US-CA", "IN"]),
+  jurisdiction: z.enum(["US-CA", "IN", "UK"]),
 });
 
 export const RequestEwaBody = z.object({

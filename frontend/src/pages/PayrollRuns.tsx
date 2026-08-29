@@ -158,6 +158,7 @@ export function PayrollRunsPage() {
               <NativeSelect id="jurisdiction" value={jurisdiction} onChange={(e) => setJurisdiction(e.target.value)}>
                 <option value="US-CA">US-CA — US federal + California (illustrative)</option>
                 <option value="IN">IN — India, New Tax Regime FY2024-25</option>
+                <option value="UK">UK — PAYE + National Insurance (2024/25)</option>
               </NativeSelect>
               <p className="text-xs text-muted-foreground">
                 Every line in a run is computed under one jurisdiction. An employee whose country doesn&apos;t

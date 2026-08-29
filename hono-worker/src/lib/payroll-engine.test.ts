@@ -119,32 +119,40 @@ describe("computePayrollLine — India (IN)", () => {
     periodEnd: "2024-12-31", // full year, periodFraction = 1
   };
 
-  it("applies the Section 87A rebate: zero tax when taxable income is at or below the threshold", () => {
+  it("applies the Section 87A rebate (income tax + cess zero), but EPF still applies regardless - it isn't income-tax-linked", () => {
     // ₹6,50,000 annual - ₹75,000 standard deduction = ₹5,75,000 taxable,
-    // under the ₹7,00,000 rebate threshold -> tax must be exactly zero.
+    // under the ₹7,00,000 rebate threshold -> income tax and cess are zero.
+    // EPF is a statutory retirement contribution, not an income tax - it is
+    // unaffected by the 87A rebate and still withheld: 12% of ₹6,50,000 =
+    // ₹78,000.
     const result = computePayrollLine({ ...INDIA_BASE, annualSalaryMinor: 6_50_000_00 });
     expect(result.supported).toBe(true);
     if (!result.supported) return;
     const tax = result.deductions.find((d) => d.type === "india_income_tax_tds")!;
     const cess = result.deductions.find((d) => d.type === "india_health_education_cess")!;
+    const epf = result.deductions.find((d) => d.type === "india_epf")!;
     expect(tax.amountMinor).toBe(0);
     expect(cess.amountMinor).toBe(0);
-    expect(result.netMinor).toBe(result.grossMinor);
+    expect(epf.amountMinor).toBe(78_000_00);
+    expect(result.grossMinor - result.netMinor).toBe(78_000_00);
   });
 
-  it("computes progressive slab tax plus 4% cess above the rebate threshold", () => {
+  it("computes progressive slab tax, 4% cess, and 12% EPF above the rebate threshold", () => {
     // ₹12,00,000 - ₹75,000 standard deduction = ₹11,25,000 taxable.
     // Slabs: 0% to 3L, 5% on 3-7L (=20,000), 10% on 7-10L (=30,000),
     // 15% on 10-11.25L (=18,750). Total income tax = 68,750.
-    // Cess = 4% of 68,750 = 2,750. Total withheld = 71,500.
+    // Cess = 4% of 68,750 = 2,750. EPF = 12% of gross (₹12,00,000) = 1,44,000.
+    // Total withheld = 68,750 + 2,750 + 1,44,000 = 2,15,500.
     const result = computePayrollLine(INDIA_BASE);
     expect(result.supported).toBe(true);
     if (!result.supported) return;
     const tax = result.deductions.find((d) => d.type === "india_income_tax_tds")!;
     const cess = result.deductions.find((d) => d.type === "india_health_education_cess")!;
+    const epf = result.deductions.find((d) => d.type === "india_epf")!;
     expect(tax.amountMinor).toBe(68_750_00);
     expect(cess.amountMinor).toBe(2_750_00);
-    expect(result.grossMinor - result.netMinor).toBe(71_500_00);
+    expect(epf.amountMinor).toBe(144_000_00);
+    expect(result.grossMinor - result.netMinor).toBe(215_500_00);
   });
 
   it("never produces a negative net across a wide range of salaries", () => {
@@ -245,5 +253,75 @@ describe("computeMaxAdvance", () => {
 
   it("never goes negative even if prior advances exceed the cap", () => {
     expect(computeMaxAdvance(100_000, 90_000)).toBe(0);
+  });
+});
+
+describe("computePayrollLine — UK", () => {
+  const UK_BASE: PayrollLineInput = {
+    employeeId: "emp-uk-1",
+    annualSalaryMinor: 60_000_00, // £60,000
+    currency: "GBP",
+    jurisdiction: "UK",
+    periodStart: "2024-01-01",
+    periodEnd: "2024-12-31", // full year
+  };
+
+  it("charges zero income tax and zero NI at or below the personal allowance", () => {
+    const result = computePayrollLine({ ...UK_BASE, annualSalaryMinor: 12_000_00 });
+    expect(result.supported).toBe(true);
+    if (!result.supported) return;
+    const tax = result.deductions.find((d) => d.type === "uk_income_tax")!;
+    const ni = result.deductions.find((d) => d.type === "uk_national_insurance")!;
+    expect(tax.amountMinor).toBe(0);
+    expect(ni.amountMinor).toBe(0);
+    expect(result.netMinor).toBe(result.grossMinor);
+  });
+
+  it("computes basic-rate tax and main-rate NI for a salary in the basic band", () => {
+    // £30,000 - £12,570 personal allowance = £17,430 taxable, all in the
+    // 20% basic band -> tax = £3,486.
+    // NI: (£30,000 - £12,570) * 8% = £1,394.40 exactly, no rounding needed.
+    const result = computePayrollLine({ ...UK_BASE, annualSalaryMinor: 30_000_00 });
+    expect(result.supported).toBe(true);
+    if (!result.supported) return;
+    const tax = result.deductions.find((d) => d.type === "uk_income_tax")!;
+    const ni = result.deductions.find((d) => d.type === "uk_national_insurance")!;
+    expect(tax.amountMinor).toBe(3_486_00);
+    expect(ni.amountMinor).toBe(1_394_40);
+  });
+
+  it("applies the higher rate only to income above the basic band, and the NI upper-limit rate above the upper earnings limit", () => {
+    // £60,000 - £12,570 = £47,430 taxable.
+    // Basic band: £50,270-£12,570 = £37,700 at 20% = £7,540.
+    // Higher band: £60,000-£50,270 = £9,730 at 40% = £3,892.
+    // Total tax = £11,432.
+    // NI: main band (£50,270-£12,570)=£37,700 * 8% = £3,016.
+    //     upper band (£60,000-£50,270)=£9,730 * 2% = £194.60 -> rounds to
+    //     the combined annual NI figure before rounding, see engine.
+    const result = computePayrollLine(UK_BASE);
+    expect(result.supported).toBe(true);
+    if (!result.supported) return;
+    const tax = result.deductions.find((d) => d.type === "uk_income_tax")!;
+    const ni = result.deductions.find((d) => d.type === "uk_national_insurance")!;
+    expect(tax.amountMinor).toBe(1_143_200);
+    expect(ni.amountMinor).toBe(321_060);
+  });
+
+  it("never produces a negative net across a wide range of salaries", () => {
+    for (const annual of [0, 12_570_00, 50_270_00, 125_140_00, 500_000_00]) {
+      const result = computePayrollLine({ ...UK_BASE, annualSalaryMinor: annual });
+      expect(result.supported).toBe(true);
+      if (!result.supported) continue;
+      expect(result.netMinor).toBeGreaterThanOrEqual(0);
+      expect(result.netMinor).toBeLessThanOrEqual(result.grossMinor);
+    }
+  });
+
+  it("a higher salary never produces a lower net", () => {
+    const lower = computePayrollLine({ ...UK_BASE, annualSalaryMinor: 40_000_00 });
+    const higher = computePayrollLine({ ...UK_BASE, annualSalaryMinor: 60_000_00 });
+    expect(lower.supported && higher.supported).toBe(true);
+    if (!lower.supported || !higher.supported) return;
+    expect(higher.netMinor).toBeGreaterThan(lower.netMinor);
   });
 });

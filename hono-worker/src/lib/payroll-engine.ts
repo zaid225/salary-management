@@ -32,7 +32,10 @@ export interface DeductionLine {
     | "social_security"
     | "medicare"
     | "india_income_tax_tds"
-    | "india_health_education_cess";
+    | "india_health_education_cess"
+    | "india_epf"
+    | "uk_income_tax"
+    | "uk_national_insurance";
   amountMinor: Minor;
 }
 
@@ -121,6 +124,9 @@ export function computePayrollLine(input: PayrollLineInput): PayrollLineResult {
   if (input.jurisdiction === "IN") {
     return computeIndiaLine(input, grossMinor, periodFraction);
   }
+  if (input.jurisdiction === "UK") {
+    return computeUkLine(input, grossMinor, periodFraction);
+  }
   return {
     supported: false,
     employeeId: input.employeeId,
@@ -200,9 +206,66 @@ function computeIndiaLine(
   const incomeTaxMinor = Math.round(annualIncomeTax * periodFraction);
   const cessMinor = Math.round(annualCess * periodFraction);
 
+  // EPF (Employees' Provident Fund) - a statutory retirement contribution,
+  // not an income tax: 12% of gross, illustrative and uncapped here. A real
+  // implementation needs the actual wage-ceiling rules (mandatory EPF is
+  // capped at a ₹15,000/month basic salary in law; most private-sector
+  // employers contribute above that ceiling voluntarily, which is what
+  // this uncapped 12% approximates - not the strict statutory minimum).
+  const EPF_EMPLOYEE_RATE = 0.12;
+  const epfMinor = Math.round(grossMinor * EPF_EMPLOYEE_RATE);
+
   const deductions: DeductionLine[] = [
     { type: "india_income_tax_tds", amountMinor: incomeTaxMinor },
     { type: "india_health_education_cess", amountMinor: cessMinor },
+    { type: "india_epf", amountMinor: epfMinor },
+  ];
+
+  return finalizeLine(input, grossMinor, deductions);
+}
+
+// UK, 2024/25 (illustrative, England/Wales/NI rates - Scotland has its own
+// bands, not implemented here). Personal Allowance tapering for income over
+// £100,000 is a documented simplification not implemented - the allowance
+// is applied in full regardless of income level here.
+// Bands are defined on *gross* income, including the 0% Personal Allowance
+// band, and applied directly - this is how HMRC actually documents PAYE.
+// (An earlier draft subtracted the allowance first and then applied bands
+// whose boundaries were themselves gross-income cutoffs, double-counting
+// the allowance - caught by the test suite's hand-verified expected value
+// for a £60,000 salary not matching the engine's output.)
+const UK_INCOME_TAX_BANDS_2024_25: { upToAnnualMinor: number; rate: number }[] = [
+  { upToAnnualMinor: 12_570 * 100, rate: 0 }, // Personal Allowance
+  { upToAnnualMinor: 50_270 * 100, rate: 0.2 }, // basic rate
+  { upToAnnualMinor: 125_140 * 100, rate: 0.4 }, // higher rate
+  { upToAnnualMinor: Infinity, rate: 0.45 }, // additional rate
+];
+// National Insurance Class 1 (employee), 2024/25 post-January-2024 cut:
+// 0% below the primary threshold, 8% between it and the upper earnings
+// limit, 2% above. Threshold simplified to align with the personal
+// allowance rather than NI's own slightly different weekly threshold.
+const UK_NI_PRIMARY_THRESHOLD_MINOR = 12_570 * 100;
+const UK_NI_UPPER_LIMIT_MINOR = 50_270 * 100;
+const UK_NI_MAIN_RATE = 0.08;
+const UK_NI_UPPER_RATE = 0.02;
+
+function computeUkLine(input: PayrollLineInput, grossMinor: Minor, periodFraction: number): PayrollLineResult {
+  const annualIncomeTax = progressiveTax(input.annualSalaryMinor, UK_INCOME_TAX_BANDS_2024_25);
+  const incomeTaxMinor = Math.round(annualIncomeTax * periodFraction);
+
+  let annualNi = 0;
+  if (input.annualSalaryMinor > UK_NI_PRIMARY_THRESHOLD_MINOR) {
+    const mainBand = Math.min(input.annualSalaryMinor, UK_NI_UPPER_LIMIT_MINOR) - UK_NI_PRIMARY_THRESHOLD_MINOR;
+    annualNi += mainBand * UK_NI_MAIN_RATE;
+    if (input.annualSalaryMinor > UK_NI_UPPER_LIMIT_MINOR) {
+      annualNi += (input.annualSalaryMinor - UK_NI_UPPER_LIMIT_MINOR) * UK_NI_UPPER_RATE;
+    }
+  }
+  const niMinor = Math.round(Math.round(annualNi) * periodFraction);
+
+  const deductions: DeductionLine[] = [
+    { type: "uk_income_tax", amountMinor: incomeTaxMinor },
+    { type: "uk_national_insurance", amountMinor: niMinor },
   ];
 
   return finalizeLine(input, grossMinor, deductions);
