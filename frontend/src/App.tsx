@@ -18,6 +18,8 @@ import { MembersPage } from "@/pages/Members";
 import { AuditLogPage } from "@/pages/AuditLog";
 import { ProfilePage } from "@/pages/Profile";
 import { LedgerPage } from "@/pages/Ledger";
+import { PayrollRunsPage, PayrollRunDetailPage } from "@/pages/PayrollRuns";
+import { AiProposalsPage } from "@/pages/AiProposals";
 
 export default function App() {
   return (
@@ -43,6 +45,9 @@ export default function App() {
         <Route path="audit-log" element={<AuditLogPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="ledger" element={<LedgerPage />} />
+        <Route path="payroll-runs" element={<PayrollRunsPage />} />
+        <Route path="payroll-runs/:runId" element={<PayrollRunDetailPage />} />
+        <Route path="ai-proposals" element={<AiProposalsPage />} />
       </Route>
 
       {/* A successful sign-in always resolves to somewhere real (§5 step 2). */}

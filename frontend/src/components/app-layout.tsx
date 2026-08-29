@@ -5,6 +5,8 @@ import {
   BarChart3,
   ClipboardList,
   Landmark,
+  Sparkles,
+  Wallet,
   LogOut,
   Menu,
   PanelLeftClose,
@@ -28,6 +30,8 @@ const NAV = [
   { to: "members", label: "Members", icon: UsersRound, adminOnly: true },
   { to: "audit-log", label: "Audit log", icon: ClipboardList },
   { to: "ledger", label: "Ledger", icon: Landmark },
+  { to: "payroll-runs", label: "Payroll runs", icon: Wallet },
+  { to: "ai-proposals", label: "AI proposals", icon: Sparkles },
 ];
 
 const COLLAPSED_KEY = "sidebarCollapsed";

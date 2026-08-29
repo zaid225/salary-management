@@ -190,3 +190,31 @@ export interface AiProposal {
   signOffHash: string | null;
   createdAt: string;
 }
+
+export interface PayrollRun {
+  id: string;
+  organizationId: string;
+  periodStart: string;
+  periodEnd: string;
+  jurisdiction: string;
+  status: "draft" | "calculated" | "posted" | "cancelled";
+  totalGrossMinor: number;
+  totalNetMinor: number;
+  createdBy: string;
+  createdAt: string;
+  calculatedAt: string | null;
+  postedAt: string | null;
+}
+
+export interface PayrollRunLine {
+  id: string;
+  payrollRunId: string;
+  employeeId: string;
+  jurisdiction: string;
+  supported: "true" | "false";
+  grossMinor: number | null;
+  netMinor: number | null;
+  currency: string | null;
+  deductions: { type: string; amountMinor: number }[] | null;
+  unsupportedReason: string | null;
+}

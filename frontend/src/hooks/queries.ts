@@ -13,6 +13,8 @@ import type {
   InvitationsResponse,
   LedgerEvent,
   MembersResponse,
+  PayrollRun,
+  PayrollRunLine,
   Organization,
   Role,
 } from "@/lib/types";
@@ -104,6 +106,113 @@ export function useAiProposals() {
     queryFn: () => api.request<{ proposals: AiProposal[] }>("/api/ai-proposals", { orgId: activeOrgId }),
     enabled: Boolean(activeOrgId),
   });
+}
+
+// --- Payroll runs ---
+
+export function usePayrollRuns() {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["payroll-runs", activeOrgId ?? ""],
+    queryFn: () => api.request<{ runs: PayrollRun[] }>("/api/payroll-runs", { orgId: activeOrgId }),
+    enabled: Boolean(activeOrgId),
+  });
+}
+
+export function usePayrollRun(runId: string | undefined) {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["payroll-run", activeOrgId ?? "", runId ?? ""],
+    queryFn: () =>
+      api.request<{ run: PayrollRun; lines: PayrollRunLine[] }>(`/api/payroll-runs/${runId}`, {
+        orgId: activeOrgId,
+      }),
+    enabled: Boolean(activeOrgId && runId),
+    // While a run is mid-pipeline (just calculated, about to be reviewed and
+    // posted) there is nothing else pushing updates - a light poll keeps a
+    // second admin's screen in sync without needing websockets for this.
+    refetchInterval: (query) => (query.state.data?.run.status === "draft" ? false : 4000),
+  });
+}
+
+export function useCreatePayrollRun() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    (body: { periodStart: string; periodEnd: string; jurisdiction: string }, { orgId }) =>
+      api.request<{ run: PayrollRun }>("/api/payroll-runs", { method: "POST", body, orgId }),
+    {
+      successMessage: () => "Payroll run created",
+      invalidate: (orgId) => [["payroll-runs", orgId]],
+    },
+  );
+}
+
+export function useCalculatePayrollRun() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    (runId: string, { orgId }) =>
+      api.request<{ run: PayrollRun; lineCount: number }>(`/api/payroll-runs/${runId}/calculate`, {
+        method: "POST",
+        orgId,
+      }),
+    {
+      successMessage: (result) => `Calculated ${result.lineCount} line(s)`,
+      invalidate: (orgId) => [["payroll-runs", orgId], ["payroll-run", orgId]],
+    },
+  );
+}
+
+export function usePostPayrollRun() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    (runId: string, { orgId }) =>
+      api.request<{ run: PayrollRun; paychecksIssued: number }>(`/api/payroll-runs/${runId}/post`, {
+        method: "POST",
+        orgId,
+      }),
+    {
+      successMessage: (result) => `Posted — ${result.paychecksIssued} paycheck(s) issued`,
+      invalidate: (orgId) => [
+        ["payroll-runs", orgId],
+        ["payroll-run", orgId],
+        ["ledger-events", orgId],
+      ],
+    },
+  );
+}
+
+// --- AI pre-flight auditor + proposal review ---
+
+export function useStartPreflightAudit() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    (body: { periodStart: string; periodEnd: string }, { orgId }) =>
+      api.request<{ proposal: AiProposal; jobId: string }>("/api/payroll/preflight-audit", {
+        method: "POST",
+        body,
+        orgId,
+      }),
+    {
+      successMessage: () => "Pre-flight audit complete — see AI Proposals",
+      invalidate: (orgId) => [["ai-proposals", orgId]],
+    },
+  );
+}
+
+export function useReviewProposal() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    ({ proposalId, decision }: { proposalId: string; decision: "approved" | "rejected" }, { orgId }) =>
+      api.request<{ proposal: AiProposal }>(`/api/ai-proposals/${proposalId}/review`, {
+        method: "POST",
+        body: { decision },
+        orgId,
+      }),
+    {
+      successMessage: (_result, args) => (args.decision === "approved" ? "Proposal approved" : "Proposal rejected"),
+      invalidate: (orgId) => [["ai-proposals", orgId]],
+    },
+  );
 }
 
 export function useAnalytics() {
