@@ -205,3 +205,30 @@ export const ewaRequests = pgTable(
   },
   (t) => [index("idx_ewa_org_status").on(t.organizationId, t.status)],
 );
+
+// Attendance facts, kept separate from ledgerEvents: clock punches are
+// high-volume and non-monetary, and don't belong in a table whose sequence
+// column exists to give a total order to money movements. A unique index
+// on (organizationId, source, externalId) is what makes the ingest webhook
+// idempotent - the same HRIS retry can never create a duplicate punch.
+export const timeEntries = pgTable(
+  "time_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    type: varchar("type", { length: 20 }).notNull(), // clock_in | clock_out
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    source: varchar("source", { length: 50 }).notNull(), // name of the originating HRIS/time system
+    externalId: varchar("external_id", { length: 255 }).notNull(), // that system's own id for this punch
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("idx_time_entries_org_employee").on(t.organizationId, t.employeeId, t.occurredAt),
+    uniqueIndex("uq_time_entries_source").on(t.organizationId, t.source, t.externalId),
+  ],
+);

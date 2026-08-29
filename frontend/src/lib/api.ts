@@ -58,11 +58,18 @@ export function createApiClient(getToken: TokenGetter) {
       body = JSON.stringify(opts.body);
     }
 
+    // Every request gets a client-side ceiling even if the caller didn't
+    // pass one - the backend's own outbound calls (e.g. OpenRouter) already
+    // abort at 55s (scaling-resilience.md rule 1), but a stalled network
+    // connection between browser and Worker isn't covered by that. Without
+    // this, a request can hang in "pending" forever with no way for the UI
+    // to know the server-side work is actually done. 70s gives headroom
+    // above the backend's own 55s ceiling.
     const res = await fetch(`${API_URL}${path}`, {
       method: opts.method ?? "GET",
       headers,
       body,
-      signal: opts.signal,
+      signal: opts.signal ?? AbortSignal.timeout(70_000),
     });
 
     if (!res.ok) await parseError(res);

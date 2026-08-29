@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Plus } from "lucide-react";
 import {
+  useAttendance,
   useEmployees,
   useEwaAccrual,
   useEwaRequests,
@@ -47,7 +48,7 @@ export function EwaPage() {
     <div className="space-y-6">
       <PageHeader
         title="Earned wage access"
-        description="Accrual is calendar-based (calendar days elapsed ÷ days in the period) — this app has no attendance data source yet, so it's an approximation, not attendance-verified."
+        description="Accrual uses real clock-in/out hours when an HRIS has synced attendance for the period; otherwise it falls back to calendar-day proration (days elapsed ÷ days in the period)."
         actions={
           isAdmin && (
             <Button size="sm" onClick={() => setRequestOpen(true)}>
@@ -147,6 +148,11 @@ function RequestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
   const requestAdvance = useRequestEwaAdvance();
 
   const accrual = useEwaAccrual(employeeId || null, periodStart, periodEnd);
+  const attendance = useAttendance(
+    accrual.data?.accrualSource === "hours" ? employeeId || null : null,
+    periodStart,
+    periodEnd,
+  );
 
   function reset() {
     setEmployeeId("");
@@ -222,11 +228,16 @@ function RequestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
 
           {accrual.data && (
             <div className="rounded-md bg-muted p-3 text-sm">
-              <p>
-                Accrued so far: <span className="font-medium">
-                  {formatMoney(accrual.data.accruedGrossMinor / 100, accrual.data.currency ?? "USD")}
-                </span>
-              </p>
+              <div className="flex items-center justify-between">
+                <p>
+                  Accrued so far: <span className="font-medium">
+                    {formatMoney(accrual.data.accruedGrossMinor / 100, accrual.data.currency ?? "USD")}
+                  </span>
+                </p>
+                <Badge variant={accrual.data.accrualSource === "hours" ? "default" : "outline"}>
+                  {accrual.data.accrualSource === "hours" ? "attendance-verified" : "calendar estimate"}
+                </Badge>
+              </div>
               <p className="text-muted-foreground">
                 Up to{" "}
                 <span className="font-medium text-foreground">
@@ -234,6 +245,14 @@ function RequestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                 </span>{" "}
                 available to request
               </p>
+              {attendance.data && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {attendance.data.attendance.totalHours} hours across {attendance.data.attendance.shifts.length}{" "}
+                  shift(s) on record for this period.
+                  {attendance.data.attendance.unpaired.length > 0 &&
+                    ` ${attendance.data.attendance.unpaired.length} punch(es) unpaired — missing a clock in/out.`}
+                </p>
+              )}
             </div>
           )}
 

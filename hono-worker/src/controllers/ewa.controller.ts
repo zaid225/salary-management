@@ -1,12 +1,57 @@
 import type { Context } from "hono";
 import type { z } from "zod/v4";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import type { AppBindings } from "../lib/context.js";
 import type { Db } from "../models/db.js";
-import { ewaRequests, ledgerEvents, ledgerBalances } from "../models/schema.js";
+import { ewaRequests, ledgerEvents, ledgerBalances, timeEntries } from "../models/schema.js";
 import { scopedDb } from "../models/scoped-db.js";
 import { computeAccrual, computeMaxAdvance } from "../lib/payroll-engine.js";
+import { computeAttendance, computeHoursBasedGross, type Punch } from "../lib/hris.js";
 import type { RequestEwaBody, ReviewEwaRequestBody } from "../schemas/payroll.schema.js";
+
+/**
+ * Accrual, preferring real attendance when it exists. If any time_entries
+ * punches were ingested for this employee within the declared period, hours
+ * actually worked (lib/hris.ts's deterministic shift-pairing) drive the
+ * accrued amount - a strictly better signal than calendar-day proration.
+ * With zero punches on record, falls back to the existing calendar-day
+ * proration (lib/payroll-engine.ts's computeAccrual) so EWA still works for
+ * orgs with no HRIS integration wired up.
+ */
+async function computeAccrualForEmployee(
+  db: Db,
+  orgId: string,
+  employeeId: string,
+  annualSalaryMinor: number,
+  periodStart: string,
+  periodEnd: string,
+  asOfDate: string,
+): Promise<{ accruedGrossMinor: number; source: "hours" | "calendar" }> {
+  const rows = await db
+    .select()
+    .from(timeEntries)
+    .where(
+      and(
+        eq(timeEntries.organizationId, orgId),
+        eq(timeEntries.employeeId, employeeId),
+        gte(timeEntries.occurredAt, new Date(`${periodStart}T00:00:00.000Z`)),
+        lte(timeEntries.occurredAt, new Date(`${asOfDate}T23:59:59.999Z`)),
+      ),
+    )
+    .orderBy(asc(timeEntries.occurredAt));
+
+  if (rows.length === 0) {
+    const accrual = computeAccrual({ annualSalaryMinor, periodStart, periodEnd, asOfDate });
+    return { accruedGrossMinor: accrual.accruedGrossMinor, source: "calendar" };
+  }
+
+  const punches: Punch[] = rows.map((r) => ({
+    type: r.type as "clock_in" | "clock_out",
+    occurredAt: r.occurredAt.toISOString(),
+  }));
+  const { totalHours } = computeAttendance(punches);
+  return { accruedGrossMinor: computeHoursBasedGross(annualSalaryMinor, totalHours), source: "hours" };
+}
 
 type RequestIn = {
   in: { json: z.input<typeof RequestEwaBody> };
@@ -44,12 +89,15 @@ export async function requestEwaAdvance(c: Context<AppBindings, string, RequestI
   }
 
   const asOfDate = new Date().toISOString().slice(0, 10);
-  const accrual = computeAccrual({
-    annualSalaryMinor: Math.round(Number(currentSalary.amount) * 100),
+  const accrual = await computeAccrualForEmployee(
+    db,
+    orgId,
+    employeeId,
+    Math.round(Number(currentSalary.amount) * 100),
     periodStart,
     periodEnd,
     asOfDate,
-  });
+  );
 
   const alreadyAdvanced = await sumApprovedAdvances(db, orgId, employeeId, periodStart, periodEnd);
   const maxAllowedMinor = computeMaxAdvance(accrual.accruedGrossMinor, alreadyAdvanced);
@@ -235,12 +283,15 @@ export async function getEwaAccrual(c: Context<AppBindings>): Promise<Response> 
   }
 
   const asOfDate = new Date().toISOString().slice(0, 10);
-  const accrual = computeAccrual({
-    annualSalaryMinor: Math.round(Number(currentSalary.amount) * 100),
+  const accrual = await computeAccrualForEmployee(
+    db,
+    orgId,
+    employeeId,
+    Math.round(Number(currentSalary.amount) * 100),
     periodStart,
     periodEnd,
     asOfDate,
-  });
+  );
   const alreadyAdvanced = await sumApprovedAdvances(db, orgId, employeeId, periodStart, periodEnd);
   const maxAllowedMinor = computeMaxAdvance(accrual.accruedGrossMinor, alreadyAdvanced);
 
@@ -248,5 +299,6 @@ export async function getEwaAccrual(c: Context<AppBindings>): Promise<Response> 
     accruedGrossMinor: accrual.accruedGrossMinor,
     maxAllowedMinor,
     currency: currentSalary.currency,
+    accrualSource: accrual.source,
   });
 }

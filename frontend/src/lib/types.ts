@@ -241,4 +241,35 @@ export interface EwaAccrual {
   accruedGrossMinor: number;
   maxAllowedMinor: number;
   currency: string | null;
+  // "hours" once real HRIS punches exist for the employee/period, otherwise
+  // "calendar" (calendar-day proration) - see hono-worker/src/lib/hris.ts.
+  accrualSource: "hours" | "calendar";
+}
+
+// --- HRIS attendance ---
+
+export interface TimeEntry {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  type: "clock_in" | "clock_out";
+  occurredAt: string;
+  source: string;
+  externalId: string;
+  createdAt: string;
+}
+
+export interface Shift {
+  clockIn: string;
+  clockOut: string;
+  hours: number;
+}
+
+export interface AttendanceResponse {
+  entries: TimeEntry[];
+  attendance: {
+    shifts: Shift[];
+    totalHours: number;
+    unpaired: { type: "clock_in" | "clock_out"; occurredAt: string }[];
+  };
 }

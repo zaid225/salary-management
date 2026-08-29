@@ -33,3 +33,17 @@ export const RequestEwaBody = z.object({
 export const ReviewEwaRequestBody = z.object({
   decision: z.enum(["approved", "rejected"]),
 });
+
+const PunchIn = z.object({
+  employeeId: z.guid(),
+  type: z.enum(["clock_in", "clock_out"]),
+  occurredAt: z.iso.datetime({ offset: true }),
+  // That system's own id for this punch - what makes replay idempotent
+  // (unique on organizationId+source+externalId).
+  externalId: z.string().min(1).max(255),
+});
+
+export const HrisWebhookBody = z.object({
+  source: z.string().min(1).max(50),
+  punches: z.array(PunchIn).min(1).max(500), // bounded batch, not unbounded (database-indexing.md rule 2)
+});

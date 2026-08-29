@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll, beforeEach } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { testDb, testEnv, testExecutionCtx, truncateAll } from "../../test-utils/db.js";
-import { organizations, memberships, employees, salaryRecords, ledgerEvents, ledgerBalances } from "../models/schema.js";
+import { organizations, memberships, employees, salaryRecords, ledgerEvents, ledgerBalances, timeEntries } from "../models/schema.js";
 import { ewaRoutes } from "./ewa.routes.js";
 
 const { db, client } = testDb();
@@ -103,6 +103,46 @@ describe("GET /ewa/accrual/:employeeId", () => {
       testExecutionCtx(),
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /ewa/accrual/:employeeId — hours-based override", () => {
+  it("uses real attendance hours instead of calendar proration once punches exist for the period", async () => {
+    const { org, employee } = await seedOrgWithEmployee();
+    // One real 8-hour shift on record within the declared period.
+    await db.insert(timeEntries).values([
+      {
+        organizationId: org.id,
+        employeeId: employee.id,
+        type: "clock_in",
+        occurredAt: new Date("2024-01-03T09:00:00.000Z"),
+        source: "test-hris",
+        externalId: "shift-1-in",
+      },
+      {
+        organizationId: org.id,
+        employeeId: employee.id,
+        type: "clock_out",
+        occurredAt: new Date("2024-01-03T17:00:00.000Z"),
+        source: "test-hris",
+        externalId: "shift-1-out",
+      },
+    ]);
+
+    const res = await ewaRoutes.fetch(
+      new Request(
+        `http://test/ewa/accrual/${employee.id}?periodStart=${PERIOD.periodStart}&periodEnd=${PERIOD.periodEnd}`,
+        { headers: authed("admin_1", org.id) },
+      ),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { accruedGrossMinor: number; accrualSource: string };
+    expect(body.accrualSource).toBe("hours");
+    // $120,000.00/yr => 12,000,000 minor units; 8 hours of 2,080 standard
+    // annual hours => 12,000,000 * 8 / 2080 = 46,153.84... rounds to 46,154.
+    expect(body.accruedGrossMinor).toBe(46_154);
   });
 });
 

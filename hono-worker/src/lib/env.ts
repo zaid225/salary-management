@@ -28,6 +28,10 @@ const EnvSchema = z.object({
   // dev - the tokenizer still degrades cleanly (see lib/pii.ts) rather than
   // crashing boot, same contract as every other optional integration here.
   PII_ENCRYPTION_KEY: z.string().default(""),
+  // Shared secret an external HRIS/time system attaches as `x-hris-secret`
+  // when POSTing punches. Same degrade-cleanly contract as every other
+  // optional integration: unset in dev -> 501, never a crash.
+  HRIS_WEBHOOK_SECRET: z.string().default(""),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

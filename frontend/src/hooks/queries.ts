@@ -13,6 +13,7 @@ import type {
   InvitationsResponse,
   EwaAccrual,
   EwaRequest,
+  AttendanceResponse,
   LedgerEvent,
   MembersResponse,
   PayrollRun,
@@ -235,6 +236,21 @@ export function useEwaAccrual(employeeId: string | null, periodStart: string, pe
     queryFn: () =>
       api.request<EwaAccrual>(
         `/api/ewa/accrual/${employeeId}?periodStart=${periodStart}&periodEnd=${periodEnd}`,
+        { orgId: activeOrgId },
+      ),
+    enabled: Boolean(activeOrgId && employeeId && periodStart && periodEnd),
+  });
+}
+
+// --- HRIS attendance ---
+
+export function useAttendance(employeeId: string | null, periodStart: string, periodEnd: string) {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["attendance", activeOrgId ?? "", employeeId ?? "", periodStart, periodEnd],
+    queryFn: () =>
+      api.request<AttendanceResponse>(
+        `/api/hris/attendance/${employeeId}?periodStart=${periodStart}&periodEnd=${periodEnd}`,
         { orgId: activeOrgId },
       ),
     enabled: Boolean(activeOrgId && employeeId && periodStart && periodEnd),

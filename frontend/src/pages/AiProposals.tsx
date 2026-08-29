@@ -250,9 +250,9 @@ export function AiProposalsPage() {
                   <div className="h-full w-1/3 animate-[import-sweep_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  This is one API call, billed once regardless of how long it takes. The free-tier model used
-                  here can genuinely take up to a minute — closing this dialog does not cancel it, and does
-                  not send a second request either way.
+                  This is one API call, billed once (per-token, not free) regardless of how long it takes.
+                  The model itself has a hard 55s server-side cutoff — closing this dialog does not cancel
+                  it or send a second request either way.
                 </p>
               </div>
             )}
