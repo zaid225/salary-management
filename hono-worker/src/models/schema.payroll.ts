@@ -10,8 +10,7 @@ import {
   bigserial,
   bigint,
 } from "drizzle-orm/pg-core";
-import { organizations } from "./schema.js";
-import { jobs } from "./schema.js";
+import { organizations, employees, jobs } from "./schema.js";
 
 // --- Payroll/treasury domain: event-sourced ledger + PII tokenization ---
 // Kept in its own file: a distinct product surface from salary management,
@@ -118,4 +117,56 @@ export const aiProposals = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("idx_proposals_org_status").on(t.organizationId, t.status)],
+);
+
+// A payroll run for one org/period, moving through a strict status
+// pipeline: draft -> calculated -> posted (or cancelled at any point before
+// posted). Only 'posted' ever writes to ledgerEvents/ledgerBalances -
+// calculating is free to re-run as many times as needed while still draft.
+export const payrollRuns = pgTable(
+  "payroll_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    periodStart: text("period_start").notNull(), // YYYY-MM-DD
+    periodEnd: text("period_end").notNull(),
+    // Fixed at creation, not passed per-call - every line in a run is
+    // computed under one jurisdiction for this scaffold pass.
+    jurisdiction: varchar("jurisdiction", { length: 20 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("draft"), // draft | calculated | posted | cancelled
+    totalGrossMinor: bigint("total_gross_minor", { mode: "number" }).notNull().default(0),
+    totalNetMinor: bigint("total_net_minor", { mode: "number" }).notNull().default(0),
+    createdBy: varchar("created_by", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    calculatedAt: timestamp("calculated_at", { withTimezone: true }),
+    postedAt: timestamp("posted_at", { withTimezone: true }),
+  },
+  (t) => [index("idx_payroll_runs_org_status").on(t.organizationId, t.status)],
+);
+
+// One row per employee per run. Recalculating a still-draft run replaces
+// these rows entirely (delete + reinsert in one transaction) rather than
+// updating in place, so a run's lines are always a clean, current snapshot
+// of the last calculation.
+export const payrollRunLines = pgTable(
+  "payroll_run_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    payrollRunId: uuid("payroll_run_id")
+      .notNull()
+      .references(() => payrollRuns.id),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    jurisdiction: varchar("jurisdiction", { length: 20 }).notNull(),
+    supported: text("supported").notNull(), // "true" | "false" - stored as text since Drizzle boolean would need a migration column type most other tables here don't use
+    grossMinor: bigint("gross_minor", { mode: "number" }),
+    netMinor: bigint("net_minor", { mode: "number" }),
+    currency: varchar("currency", { length: 3 }),
+    deductions: jsonb("deductions"), // DeductionLine[] from payroll-engine.ts
+    unsupportedReason: text("unsupported_reason"),
+  },
+  (t) => [index("idx_payroll_lines_run").on(t.payrollRunId)],
 );

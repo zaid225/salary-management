@@ -11,3 +11,12 @@ export const StartPreflightAuditBody = z.object({
 export const ReviewProposalBody = z.object({
   decision: z.enum(["approved", "rejected"]),
 });
+
+export const CreatePayrollRunBody = z.object({
+  periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "periodStart must be YYYY-MM-DD"),
+  periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "periodEnd must be YYYY-MM-DD"),
+  // Every active employee in this run is computed under the same
+  // jurisdiction for this scaffold pass - a real system would derive it
+  // per-employee from their country/state, once more jurisdictions exist.
+  jurisdiction: z.enum(["US-CA", "IN"]),
+});
