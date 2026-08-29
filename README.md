@@ -20,6 +20,13 @@ own tables rather than an auth provider's org primitive.
 
 Design spec: [`docs/superpowers/specs/2026-08-26-salary-management-design.md`](docs/superpowers/specs/2026-08-26-salary-management-design.md)
 
+This repo also hosts a second, larger build on the same stack: an
+AI-augmented global payroll/treasury/EWA platform (event-sourced ledger,
+deterministic payroll engine, HRIS sync, a Legal-to-Code compliance diff
+engine, cash-flow forecasting, a total-landed-cost modeler, and an RSU tax
+optimizer). Its agent-orchestrator/HITL design is documented separately:
+[`docs/orchestrator-architecture.md`](docs/orchestrator-architecture.md).
+
 ## Tech stack
 
 | Layer | Choice | Why |
