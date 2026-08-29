@@ -194,6 +194,12 @@ export function useStartPreflightAudit() {
         method: "POST",
         body,
         orgId,
+        // The backend's own model call alone has a 55s ceiling
+        // (scaling-resilience.md rule 1), plus PII tokenization writes and
+        // job bookkeeping around it - the client's blanket 70s default
+        // (lib/api.ts) doesn't leave enough headroom for this one
+        // genuinely slow route.
+        signal: AbortSignal.timeout(120_000),
       }),
     {
       successMessage: () => "Pre-flight audit complete — see AI Proposals",

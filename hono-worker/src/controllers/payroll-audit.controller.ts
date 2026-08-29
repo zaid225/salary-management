@@ -79,30 +79,43 @@ export async function startPreflightAudit(
   // Tokenize before anything crosses the LLM boundary. The token is what
   // goes into the TOON payload; the real name is only ever readable via
   // pii_tokens, which the LLM path never queries.
+  //
+  // Encryption (in-memory SubtleCrypto, no I/O) still runs per-employee, but
+  // the inserts are batched into a single round trip instead of N sequential
+  // awaited INSERTs - with enough employees the old per-row loop added
+  // real, avoidable latency on top of the model call's own up-to-55s
+  // ceiling, which is what pushed some runs past the client's timeout.
+  const auditable = active.filter((e) => currentSalaries.has(e.id));
+  const ciphertexts = await Promise.all(
+    auditable.map((e) => encryptPii(c.env, `${e.firstName} ${e.lastName}`)),
+  );
+  const tokenRows =
+    auditable.length === 0
+      ? []
+      : await db
+          .insert(piiTokens)
+          .values(
+            auditable.map((e, i) => ({
+              organizationId: orgId,
+              fieldType: "full_name",
+              // Unconfigured PII_ENCRYPTION_KEY still tokenizes (the LLM never
+              // sees the name either way) - it just can't be reversed later
+              // until a key is set, which is the documented degrade path.
+              ciphertext: ciphertexts[i] ?? "unconfigured:PII_ENCRYPTION_KEY",
+              entityType: "employee",
+              entityId: e.id,
+            })),
+          )
+          .returning({ token: piiTokens.token, entityId: piiTokens.entityId });
+  const tokenByEmployeeId = new Map(tokenRows.map((r) => [r.entityId, r.token]));
+
   const toonRows: { employeeToken: string; department: string; level: string; amountMinor: number }[] = [];
-  for (const e of active) {
-    const salary = currentSalaries.get(e.id);
-    if (!salary) continue; // no salary on record - nothing to audit for this row
-
-    const fullName = `${e.firstName} ${e.lastName}`;
-    const ciphertext = await encryptPii(c.env, fullName);
-    const [tokenRow] = await db
-      .insert(piiTokens)
-      .values({
-        organizationId: orgId,
-        fieldType: "full_name",
-        // Unconfigured PII_ENCRYPTION_KEY still tokenizes (the LLM never
-        // sees the name either way) - it just can't be reversed later
-        // until a key is set, which is the documented degrade path.
-        ciphertext: ciphertext ?? "unconfigured:PII_ENCRYPTION_KEY",
-        entityType: "employee",
-        entityId: e.id,
-      })
-      .returning();
-    if (!tokenRow) continue;
-
+  for (const e of auditable) {
+    const token = tokenByEmployeeId.get(e.id);
+    if (!token) continue;
+    const salary = currentSalaries.get(e.id)!;
     toonRows.push({
-      employeeToken: tokenRow.token,
+      employeeToken: token,
       department: e.department,
       level: e.level,
       // Integer minor units - never a float - matches ledgerEvents.amountMinor.
