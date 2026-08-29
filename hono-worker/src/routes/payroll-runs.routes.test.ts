@@ -177,6 +177,86 @@ describe("payroll run lifecycle: draft -> calculated -> posted", () => {
     expect(lines).toHaveLength(1); // still one line, not two
   });
 
+  it("posting with multiple employees attributes each ledger event to the right employee, not misaligned by the batch insert", async () => {
+    // The post handler batches every employee's ledger writes into one
+    // multi-row INSERT and zips the returned events back to their source
+    // line by array index (payroll-runs.controller.ts) - this proves that
+    // zip is correct, not just fast, by seeding distinguishable salaries
+    // and confirming each employee's own net amount ends up on their own
+    // employee_gross leg.
+    const orgRows = await db.insert(organizations).values({ name: "Multi", slug: "acme-payroll-multi" }).returning();
+    const org = orgRows[0]!;
+    await db
+      .insert(memberships)
+      .values({ organizationId: org.id, clerkUserId: "admin_1", role: "admin", status: "active" });
+
+    const salaries = [80_000, 120_000, 200_000];
+    const empIds: string[] = [];
+    for (let i = 0; i < salaries.length; i++) {
+      const emp = await db
+        .insert(employees)
+        .values({
+          organizationId: org.id,
+          employeeNumber: `EMP-0${i + 1}`,
+          firstName: `Emp${i}`,
+          lastName: "Test",
+          email: `emp${i}@example.com`,
+          country: "US",
+          department: "Engineering",
+          jobTitle: "Engineer",
+          level: "L4",
+          hireDate: "2024-01-01",
+        })
+        .returning();
+      const employee = emp[0]!;
+      empIds.push(employee.id);
+      await db.insert(salaryRecords).values({
+        organizationId: org.id,
+        employeeId: employee.id,
+        amount: `${salaries[i]}.00`,
+        currency: "USD",
+        effectiveDate: "2024-01-01",
+        reason: "hire",
+        createdBy: "admin_1",
+      });
+    }
+
+    const created = await post("/payroll-runs", org.id, {
+      periodStart: "2024-01-01",
+      periodEnd: "2024-01-31",
+      jurisdiction: "US-CA",
+    });
+    const { run } = (await created.json()) as { run: { id: string } };
+    await post(`/payroll-runs/${run.id}/calculate`, org.id);
+
+    const linesBeforePost = await db.select().from(payrollRunLines).where(eq(payrollRunLines.payrollRunId, run.id));
+    const netByEmployee = new Map(linesBeforePost.map((l) => [l.employeeId, l.netMinor]));
+
+    const posted = await post(`/payroll-runs/${run.id}/post`, org.id);
+    expect(posted.status).toBe(200);
+    const postBody = (await posted.json()) as { paychecksIssued: number };
+    expect(postBody.paychecksIssued).toBe(3);
+
+    const events = await db
+      .select()
+      .from(ledgerEvents)
+      .where(and(eq(ledgerEvents.organizationId, org.id), eq(ledgerEvents.eventType, "paycheck_issued")));
+    expect(events).toHaveLength(3);
+
+    for (const empId of empIds) {
+      const event = events.find((e) => (e.payload as { employeeId: string }).employeeId === empId)!;
+      expect(event).toBeDefined();
+      const balances = await db.select().from(ledgerBalances).where(eq(ledgerBalances.eventId, event.id));
+      const employeeLeg = balances.find((b) => b.accountType === "employee_gross")!;
+      // The balance leg's accountId and deltaMinor must match THIS
+      // employee's own net pay, not another employee's from the same batch.
+      expect(employeeLeg.accountId).toBe(empId);
+      expect(employeeLeg.deltaMinor).toBe(netByEmployee.get(empId));
+      const sum = balances.reduce((acc, b) => acc + b.deltaMinor, 0);
+      expect(sum).toBe(0);
+    }
+  });
+
   it("flags an employee in an unsupported jurisdiction rather than silently skipping totals", async () => {
     const { org } = await seedOrgWithEmployees();
     const created = await post("/payroll-runs", org.id, {

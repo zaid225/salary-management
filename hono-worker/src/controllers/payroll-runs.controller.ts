@@ -164,60 +164,78 @@ export async function postPayrollRun(c: Context<AppBindings>): Promise<Response>
     );
   }
 
-  const lines = await db
-    .select()
-    .from(payrollRunLines)
-    .where(and(eq(payrollRunLines.payrollRunId, runId), eq(payrollRunLines.supported, "true")));
+  const lines = (
+    await db
+      .select()
+      .from(payrollRunLines)
+      .where(and(eq(payrollRunLines.payrollRunId, runId), eq(payrollRunLines.supported, "true")))
+  ).filter((l) => l.grossMinor !== null && l.netMinor !== null && l.currency !== null) as (typeof payrollRunLines.$inferSelect & {
+    grossMinor: number;
+    netMinor: number;
+    currency: string;
+  })[];
 
   await db.transaction(async (tx) => {
-    for (const line of lines) {
-      if (!line.grossMinor || !line.netMinor || !line.currency) continue;
-
-      const [event] = await tx
+    if (lines.length > 0) {
+      // Batched, not looped: one INSERT...RETURNING for every ledger event
+      // and one for every balance leg, instead of 2 round trips per
+      // employee serialized inside this transaction - with enough
+      // employees the old per-line loop was slow enough to blow past the
+      // request timeout (same class of bug as the pre-flight auditor's
+      // per-row PII-token loop, fixed the same way). A single multi-row
+      // INSERT...RETURNING preserves VALUES order, so zipping the returned
+      // events back to `lines` by index is safe here.
+      const events = await tx
         .insert(ledgerEvents)
-        .values({
-          organizationId: orgId,
-          eventType: "paycheck_issued",
-          entityType: "payroll_run",
-          entityId: run.id,
-          amountMinor: line.netMinor,
-          currency: line.currency,
-          payload: { employeeId: line.employeeId, grossMinor: line.grossMinor, deductions: line.deductions },
-          actorClerkUserId: userId,
-        })
+        .values(
+          lines.map((line) => ({
+            organizationId: orgId,
+            eventType: "paycheck_issued" as const,
+            entityType: "payroll_run" as const,
+            entityId: run.id,
+            amountMinor: line.netMinor,
+            currency: line.currency,
+            payload: { employeeId: line.employeeId, grossMinor: line.grossMinor, deductions: line.deductions },
+            actorClerkUserId: userId,
+          })),
+        )
         .returning();
-      if (!event) throw new Error("ledger event insert did not return a row");
+      if (events.length !== lines.length) throw new Error("ledger event batch insert returned an unexpected row count");
 
       // Double-entry: employer_cash debits by gross, employee_gross credits
       // by net (what actually reaches the employee) and tax_payable credits
-      // by the withheld difference - the three legs sum to zero.
-      const withheldMinor = line.grossMinor - line.netMinor;
-      await tx.insert(ledgerBalances).values([
-        {
-          organizationId: orgId,
-          accountType: "employer_cash",
-          accountId: orgId,
-          eventId: event.id,
-          deltaMinor: -line.grossMinor,
-          currency: line.currency,
-        },
-        {
-          organizationId: orgId,
-          accountType: "employee_gross",
-          accountId: line.employeeId,
-          eventId: event.id,
-          deltaMinor: line.netMinor,
-          currency: line.currency,
-        },
-        {
-          organizationId: orgId,
-          accountType: "tax_payable",
-          accountId: orgId,
-          eventId: event.id,
-          deltaMinor: withheldMinor,
-          currency: line.currency,
-        },
-      ]);
+      // by the withheld difference - the three legs sum to zero, per event.
+      const balances = lines.flatMap((line, i) => {
+        const event = events[i]!;
+        const withheldMinor = line.grossMinor - line.netMinor;
+        return [
+          {
+            organizationId: orgId,
+            accountType: "employer_cash" as const,
+            accountId: orgId,
+            eventId: event.id,
+            deltaMinor: -line.grossMinor,
+            currency: line.currency,
+          },
+          {
+            organizationId: orgId,
+            accountType: "employee_gross" as const,
+            accountId: line.employeeId,
+            eventId: event.id,
+            deltaMinor: line.netMinor,
+            currency: line.currency,
+          },
+          {
+            organizationId: orgId,
+            accountType: "tax_payable" as const,
+            accountId: orgId,
+            eventId: event.id,
+            deltaMinor: withheldMinor,
+            currency: line.currency,
+          },
+        ];
+      });
+      await tx.insert(ledgerBalances).values(balances);
     }
 
     await tx.update(payrollRuns).set({ status: "posted", postedAt: new Date() }).where(eq(payrollRuns.id, runId));
