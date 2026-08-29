@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Sparkles } from "lucide-react";
 import { useAiProposals, useReviewProposal, useStartPreflightAudit } from "@/hooks/queries";
+import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useOrg } from "@/lib/org-context";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -92,6 +93,7 @@ export function AiProposalsPage() {
   const [auditOpen, setAuditOpen] = React.useState(false);
   const [periodStart, setPeriodStart] = React.useState("");
   const [periodEnd, setPeriodEnd] = React.useState("");
+  const elapsed = useElapsedSeconds(startAudit.isPending);
 
   const proposals = data?.proposals ?? [];
   const pending = proposals.filter((p) => p.status === "pending");
@@ -238,12 +240,29 @@ export function AiProposalsPage() {
                 />
               </div>
             </div>
+            {startAudit.isPending && (
+              <div className="space-y-1.5 rounded-md border p-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span>Calling the model…</span>
+                  <span className="tabular-nums text-muted-foreground">{elapsed}s</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full w-1/3 animate-[import-sweep_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This is one API call, billed once regardless of how long it takes. The free-tier model used
+                  here can genuinely take up to a minute — closing this dialog does not cancel it, and does
+                  not send a second request either way.
+                </p>
+              </div>
+            )}
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setAuditOpen(false)}>
-                Cancel
+                {startAudit.isPending ? "Run in background" : "Cancel"}
               </Button>
               <Button type="submit" disabled={startAudit.isPending}>
-                {startAudit.isPending ? "Running…" : "Run audit"}
+                {startAudit.isPending ? `Running… ${elapsed}s` : "Run audit"}
               </Button>
             </DialogFooter>
           </form>

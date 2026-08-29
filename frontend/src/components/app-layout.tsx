@@ -7,6 +7,7 @@ import {
   Landmark,
   Sparkles,
   Wallet,
+  HandCoins,
   LogOut,
   Menu,
   PanelLeftClose,
@@ -32,6 +33,7 @@ const NAV = [
   { to: "ledger", label: "Ledger", icon: Landmark },
   { to: "payroll-runs", label: "Payroll runs", icon: Wallet },
   { to: "ai-proposals", label: "AI proposals", icon: Sparkles },
+  { to: "ewa", label: "Earned wage access", icon: HandCoins },
 ];
 
 const COLLAPSED_KEY = "sidebarCollapsed";

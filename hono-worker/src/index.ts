@@ -14,6 +14,7 @@ import { auditRoutes } from "./routes/audit.routes.js";
 import { jobsRoutes } from "./routes/jobs.routes.js";
 import { payrollRoutes } from "./routes/payroll.routes.js";
 import { payrollRunsRoutes } from "./routes/payroll-runs.routes.js";
+import { ewaRoutes } from "./routes/ewa.routes.js";
 
 const app = new Hono<AppBindings>();
 
@@ -50,5 +51,6 @@ app.route("/api", auditRoutes);
 app.route("/api", jobsRoutes);
 app.route("/api", payrollRoutes);
 app.route("/api", payrollRunsRoutes);
+app.route("/api", ewaRoutes);
 
 export default app;

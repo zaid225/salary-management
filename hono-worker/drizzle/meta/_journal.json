@@ -36,6 +36,20 @@
       "when": 1787977025950,
       "tag": "0004_spooky_the_fury",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787989045035,
+      "tag": "0005_parallel_may_parker",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787989219794,
+      "tag": "0006_shiny_stardust",
+      "breakpoints": true
     }
   ]
 }

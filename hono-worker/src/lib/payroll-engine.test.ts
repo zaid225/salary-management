@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computePayrollLine, computePayrollRun, type PayrollLineInput } from "./payroll-engine.js";
+import { computeAccrual, computeMaxAdvance, computePayrollLine, computePayrollRun, type PayrollLineInput } from "./payroll-engine.js";
 
 const BASE: PayrollLineInput = {
   employeeId: "emp-1",
@@ -164,5 +164,86 @@ describe("computePayrollLine — India (IN)", () => {
     if (!fullYear.supported || !halfPeriod.supported) return;
     expect(halfPeriod.grossMinor).toBeLessThan(fullYear.grossMinor);
     expect(halfPeriod.grossMinor).toBeGreaterThan(0);
+  });
+});
+
+describe("computeAccrual", () => {
+  it("accrues zero at the very start of the period", () => {
+    const result = computeAccrual({
+      annualSalaryMinor: 12_000_000,
+      periodStart: "2024-01-01",
+      periodEnd: "2024-01-31",
+      asOfDate: "2024-01-01",
+    });
+    expect(result.accruedGrossMinor).toBeGreaterThan(0); // day 1 itself counts (inclusive)
+    expect(result.elapsedDays).toBe(1);
+  });
+
+  it("accrues the full period's gross when asOfDate is the period end", () => {
+    const result = computeAccrual({
+      annualSalaryMinor: 12_000_000,
+      periodStart: "2024-01-01",
+      periodEnd: "2024-01-31",
+      asOfDate: "2024-01-31",
+    });
+    const fullPeriodGross = computePayrollLine({
+      employeeId: "x",
+      annualSalaryMinor: 12_000_000,
+      currency: "USD",
+      jurisdiction: "US-CA",
+      periodStart: "2024-01-01",
+      periodEnd: "2024-01-31",
+    });
+    expect(fullPeriodGross.supported).toBe(true);
+    if (!fullPeriodGross.supported) return;
+    expect(result.accruedGrossMinor).toBe(fullPeriodGross.grossMinor);
+  });
+
+  it("clamps asOfDate outside the period rather than producing a negative or over-100% accrual", () => {
+    const before = computeAccrual({
+      annualSalaryMinor: 12_000_000,
+      periodStart: "2024-01-10",
+      periodEnd: "2024-01-31",
+      asOfDate: "2024-01-01", // before the period even starts
+    });
+    expect(before.elapsedDays).toBe(1); // clamped to periodStart
+
+    const after = computeAccrual({
+      annualSalaryMinor: 12_000_000,
+      periodStart: "2024-01-01",
+      periodEnd: "2024-01-10",
+      asOfDate: "2024-06-01", // long after the period ends
+    });
+    expect(after.elapsedDays).toBe(after.periodDays); // clamped to periodEnd, not beyond
+  });
+
+  it("accrual increases monotonically as asOfDate advances", () => {
+    const early = computeAccrual({
+      annualSalaryMinor: 12_000_000,
+      periodStart: "2024-01-01",
+      periodEnd: "2024-01-31",
+      asOfDate: "2024-01-10",
+    });
+    const later = computeAccrual({
+      annualSalaryMinor: 12_000_000,
+      periodStart: "2024-01-01",
+      periodEnd: "2024-01-31",
+      asOfDate: "2024-01-20",
+    });
+    expect(later.accruedGrossMinor).toBeGreaterThan(early.accruedGrossMinor);
+  });
+});
+
+describe("computeMaxAdvance", () => {
+  it("caps at 50% of accrued gross when nothing has been advanced yet", () => {
+    expect(computeMaxAdvance(100_000, 0)).toBe(50_000);
+  });
+
+  it("subtracts what has already been advanced", () => {
+    expect(computeMaxAdvance(100_000, 30_000)).toBe(20_000);
+  });
+
+  it("never goes negative even if prior advances exceed the cap", () => {
+    expect(computeMaxAdvance(100_000, 90_000)).toBe(0);
   });
 });

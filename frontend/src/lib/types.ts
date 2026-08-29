@@ -218,3 +218,27 @@ export interface PayrollRunLine {
   deductions: { type: string; amountMinor: number }[] | null;
   unsupportedReason: string | null;
 }
+
+export interface EwaRequest {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  requestedMinor: number;
+  periodStart: string;
+  periodEnd: string;
+  accruedAtRequestMinor: number;
+  maxAllowedAtRequestMinor: number;
+  currency: string;
+  status: "pending" | "approved" | "rejected";
+  requestedBy: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  ledgerEventId: string | null;
+  createdAt: string;
+}
+
+export interface EwaAccrual {
+  accruedGrossMinor: number;
+  maxAllowedMinor: number;
+  currency: string | null;
+}

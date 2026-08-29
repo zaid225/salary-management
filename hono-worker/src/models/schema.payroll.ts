@@ -170,3 +170,38 @@ export const payrollRunLines = pgTable(
   },
   (t) => [index("idx_payroll_lines_run").on(t.payrollRunId)],
 );
+
+// One row per advance request. Approving writes ledgerEvents/ledgerBalances
+// (employer_cash decreases, ewa_liability increases - a receivable the
+// employer settles against the employee's next actual paycheck); rejecting
+// writes nothing to the ledger at all. Status transitions are one-way:
+// pending -> approved | rejected, never back.
+export const ewaRequests = pgTable(
+  "ewa_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    requestedMinor: bigint("requested_minor", { mode: "number" }).notNull(),
+    // The declared pay period this advance is measured against - stored
+    // explicitly rather than inferred from createdAt, which is "when the
+    // request was made" and has no relationship to which pay period it's
+    // an advance against.
+    periodStart: text("period_start").notNull(),
+    periodEnd: text("period_end").notNull(),
+    accruedAtRequestMinor: bigint("accrued_at_request_minor", { mode: "number" }).notNull(), // snapshot, for audit
+    maxAllowedAtRequestMinor: bigint("max_allowed_at_request_minor", { mode: "number" }).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("pending"), // pending | approved | rejected
+    requestedBy: varchar("requested_by", { length: 255 }).notNull(),
+    reviewedBy: varchar("reviewed_by", { length: 255 }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    ledgerEventId: uuid("ledger_event_id").references(() => ledgerEvents.id), // set only once approved
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_ewa_org_status").on(t.organizationId, t.status)],
+);

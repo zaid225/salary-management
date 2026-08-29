@@ -11,6 +11,8 @@ import type {
   EmployeeListResponse,
   ImportResult,
   InvitationsResponse,
+  EwaAccrual,
+  EwaRequest,
   LedgerEvent,
   MembersResponse,
   PayrollRun,
@@ -211,6 +213,61 @@ export function useReviewProposal() {
     {
       successMessage: (_result, args) => (args.decision === "approved" ? "Proposal approved" : "Proposal rejected"),
       invalidate: (orgId) => [["ai-proposals", orgId]],
+    },
+  );
+}
+
+// --- Earned Wage Access ---
+
+export function useEwaRequests() {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["ewa-requests", activeOrgId ?? ""],
+    queryFn: () => api.request<{ requests: EwaRequest[] }>("/api/ewa/requests", { orgId: activeOrgId }),
+    enabled: Boolean(activeOrgId),
+  });
+}
+
+export function useEwaAccrual(employeeId: string | null, periodStart: string, periodEnd: string) {
+  const { api, activeOrgId } = useOrg();
+  return useQuery({
+    queryKey: ["ewa-accrual", activeOrgId ?? "", employeeId ?? "", periodStart, periodEnd],
+    queryFn: () =>
+      api.request<EwaAccrual>(
+        `/api/ewa/accrual/${employeeId}?periodStart=${periodStart}&periodEnd=${periodEnd}`,
+        { orgId: activeOrgId },
+      ),
+    enabled: Boolean(activeOrgId && employeeId && periodStart && periodEnd),
+  });
+}
+
+export function useRequestEwaAdvance() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    (body: { employeeId: string; requestedMinor: number; periodStart: string; periodEnd: string }, { orgId }) =>
+      api.request<{ request: EwaRequest }>("/api/ewa/requests", { method: "POST", body, orgId }),
+    {
+      successMessage: () => "Advance requested",
+      invalidate: (orgId) => [["ewa-requests", orgId]],
+    },
+  );
+}
+
+export function useReviewEwaRequest() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    ({ requestId, decision }: { requestId: string; decision: "approved" | "rejected" }, { orgId }) =>
+      api.request<{ request: EwaRequest }>(`/api/ewa/requests/${requestId}/review`, {
+        method: "POST",
+        body: { decision },
+        orgId,
+      }),
+    {
+      successMessage: (_result, args) => (args.decision === "approved" ? "Advance approved" : "Advance rejected"),
+      invalidate: (orgId) => [
+        ["ewa-requests", orgId],
+        ["ledger-events", orgId],
+      ],
     },
   );
 }

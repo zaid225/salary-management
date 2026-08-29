@@ -226,3 +226,48 @@ function finalizeLine(input: PayrollLineInput, grossMinor: Minor, deductions: De
 export function computePayrollRun(inputs: PayrollLineInput[]): PayrollLineResult[] {
   return inputs.map(computePayrollLine);
 }
+
+// --- Earned Wage Access accrual --------------------------------------
+// Deterministic, same rules as everything above: pure function, integer
+// minor units, no AI. Accrual is calendar-based (calendar days elapsed in
+// the period / days in the period), not attendance-based - this codebase
+// has no clock-in/time-tracking data source yet (HRIS sync is unbuilt), so
+// "days worked" is approximated as "calendar days elapsed." A real EWA
+// product needs actual attendance data; this is the illustrative version.
+export interface AccrualInput {
+  annualSalaryMinor: Minor;
+  periodStart: string; // YYYY-MM-DD, the pay period this accrual is measured against
+  periodEnd: string;
+  asOfDate: string; // YYYY-MM-DD, "today" - passed in explicitly, never read from the clock internally
+}
+
+export interface AccrualResult {
+  accruedGrossMinor: Minor; // gross earned so far this period, pro-rated by elapsed calendar days
+  elapsedDays: number;
+  periodDays: number;
+}
+
+export function computeAccrual(input: AccrualInput): AccrualResult {
+  const periodDays = daysInclusive(input.periodStart, input.periodEnd);
+  const clampedAsOf = input.asOfDate < input.periodStart ? input.periodStart : input.asOfDate > input.periodEnd ? input.periodEnd : input.asOfDate;
+  const elapsedDays = daysInclusive(input.periodStart, clampedAsOf);
+  const yearDays = daysInYear(input.periodStart);
+
+  // Same annual-proration basis as computePayrollLine, just for the elapsed
+  // slice of the period rather than the whole thing - keeps an EWA accrual
+  // and the eventual payroll run's gross consistent with each other.
+  const accruedGrossMinor = Math.round(input.annualSalaryMinor * (elapsedDays / yearDays));
+
+  return { accruedGrossMinor, elapsedDays, periodDays };
+}
+
+// Illustrative cap, not a compliance-verified regulatory limit (EWA
+// advance limits vary by US state and by country) - a real deployment
+// needs this sourced from an actual, current rule set, same caveat as the
+// tax brackets above.
+export const EWA_MAX_ADVANCE_FRACTION = 0.5;
+
+export function computeMaxAdvance(accruedGrossMinor: Minor, alreadyAdvancedMinor: Minor): Minor {
+  const cap = Math.round(accruedGrossMinor * EWA_MAX_ADVANCE_FRACTION);
+  return Math.max(0, cap - alreadyAdvancedMinor);
+}
