@@ -23,6 +23,7 @@ import { AiProposalsPage } from "@/pages/AiProposals";
 import { EwaPage } from "@/pages/Ewa";
 import { TreasuryPage } from "@/pages/Treasury";
 import { TotalLandedCostPage } from "@/pages/TotalLandedCost";
+import { RsuOptimizerPage } from "@/pages/RsuOptimizer";
 
 export default function App() {
   return (
@@ -54,6 +55,7 @@ export default function App() {
         <Route path="ewa" element={<EwaPage />} />
         <Route path="treasury" element={<TreasuryPage />} />
         <Route path="total-landed-cost" element={<TotalLandedCostPage />} />
+        <Route path="rsu-optimizer" element={<RsuOptimizerPage />} />
       </Route>
 
       {/* A successful sign-in always resolves to somewhere real (§5 step 2). */}

@@ -69,3 +69,14 @@ export const ProposeTaxRuleDiffBody = z
   .refine((v) => Boolean(v.legalText) !== Boolean(v.proposedBrackets), {
     message: "Provide exactly one of legalText or proposedBrackets",
   });
+
+export const VestingScheduleBody = z.object({
+  totalShares: z.number().int().positive(),
+  vestingStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "vestingStartDate must be YYYY-MM-DD"),
+});
+
+export const VestCalculatorBody = z.object({
+  sharesVesting: z.number().int().positive(),
+  fmvPerShareMinor: z.number().int().positive(),
+  jurisdiction: z.enum(["US-CA", "IN", "UK"]),
+});

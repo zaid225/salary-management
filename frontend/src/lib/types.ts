@@ -291,6 +291,39 @@ export interface TlcCompareResponse {
   results: TlcJurisdictionResult[];
 }
 
+// --- RSU / equity optimizer ---
+
+export interface VestEvent {
+  monthIndex: number;
+  vestDate: string;
+  shares: number;
+}
+
+export interface VestTaxDetail {
+  supported: true;
+  jurisdiction: string;
+  sharesVesting: number;
+  fmvPerShareMinor: number;
+  grossValueMinor: number;
+  withholding: { type: string; amountMinor: number }[];
+  totalTaxMinor: number;
+  netValueMinor: number;
+}
+
+export interface EquityStrategyResult {
+  strategy: "sell_to_cover" | "same_day_sale" | "hold_pay_cash";
+  sharesSold: number;
+  sharesRetained: number;
+  cashOutlayMinor: number;
+  cashProceedsMinor: number;
+  retainedValueMinor: number;
+}
+
+export interface VestCalculatorResponse {
+  tax: VestTaxDetail;
+  strategies: EquityStrategyResult[];
+}
+
 // --- HRIS attendance ---
 
 export interface TimeEntry {

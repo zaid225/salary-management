@@ -87,8 +87,11 @@ const US_FEDERAL_BRACKETS_2024_SINGLE: { upToAnnualMinor: number; rate: number }
 // brackets; a flat rate is a deliberate, documented simplification.
 const STATE_FLAT_RATE: Record<string, number> = { "US-CA": 0.05 };
 
-const SOCIAL_SECURITY_RATE = 0.062;
-const MEDICARE_RATE = 0.0145;
+// Exported: the RSU/equity vest-tax calculator (lib/rsu-optimizer.ts) is
+// also FICA-taxable income and reuses these exact rates rather than
+// redefining its own copy that could drift out of sync.
+export const SOCIAL_SECURITY_RATE = 0.062;
+export const MEDICARE_RATE = 0.0145;
 
 export interface TaxBracket {
   upToAnnualMinor: number; // Infinity for the top, open-ended bracket

@@ -16,6 +16,8 @@ import type {
   AttendanceResponse,
   TreasuryForecast,
   TlcCompareResponse,
+  VestEvent,
+  VestCalculatorResponse,
   LedgerEvent,
   MembersResponse,
   PayrollRun,
@@ -299,6 +301,32 @@ export function useTlcCompare(budgetUsdMinor: number | null) {
       api.request<TlcCompareResponse>(`/api/tlc/compare?budgetUsdMinor=${budgetUsdMinor}`, { orgId: activeOrgId }),
     enabled: Boolean(activeOrgId && budgetUsdMinor !== null && !Number.isNaN(budgetUsdMinor)),
   });
+}
+
+// --- RSU / equity optimizer ---
+
+export function useVestingSchedule() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    (body: { totalShares: number; vestingStartDate: string }, { orgId }) =>
+      api.request<{ events: VestEvent[] }>("/api/rsu/vesting-schedule", { method: "POST", body, orgId }),
+    {
+      successMessage: (result) => `Schedule computed — ${result.events.length} vest event(s)`,
+      invalidate: () => [],
+    },
+  );
+}
+
+export function useVestCalculator() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    (body: { sharesVesting: number; fmvPerShareMinor: number; jurisdiction: string }, { orgId }) =>
+      api.request<VestCalculatorResponse>("/api/rsu/vest-calculator", { method: "POST", body, orgId }),
+    {
+      successMessage: () => "Vest tax and strategies computed",
+      invalidate: () => [],
+    },
+  );
 }
 
 // --- HRIS attendance ---

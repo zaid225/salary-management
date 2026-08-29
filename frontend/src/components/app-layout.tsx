@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Globe2,
   Landmark,
+  LineChart,
   Sparkles,
   TrendingUp,
   Wallet,
@@ -38,6 +39,7 @@ const NAV = [
   { to: "ewa", label: "Earned wage access", icon: HandCoins },
   { to: "treasury", label: "Treasury forecast", icon: TrendingUp },
   { to: "total-landed-cost", label: "Total landed cost", icon: Globe2 },
+  { to: "rsu-optimizer", label: "RSU optimizer", icon: LineChart },
 ];
 
 const COLLAPSED_KEY = "sidebarCollapsed";
