@@ -265,6 +265,30 @@ export interface Shift {
   hours: number;
 }
 
+// --- Legal-to-Code tax rule diff ---
+
+export interface TaxBracketWire {
+  upToAnnualMinor: number | null; // null = open-ended top bracket
+  rate: number;
+}
+
+export interface TaxDiffScenario {
+  annualSalaryMinor: number;
+  currentAnnualTaxMinor: number;
+  proposedAnnualTaxMinor: number;
+  deltaMinor: number;
+}
+
+export interface TaxRuleDiffDetail {
+  jurisdiction: string;
+  currentBrackets?: TaxBracketWire[];
+  proposedBrackets?: TaxBracketWire[];
+  scenarios: TaxDiffScenario[];
+  totalDeltaMinor?: number;
+  error?: string | null;
+  unparsed?: string | null;
+}
+
 export interface AttendanceResponse {
   entries: TimeEntry[];
   attendance: {

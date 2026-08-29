@@ -90,8 +90,19 @@ const STATE_FLAT_RATE: Record<string, number> = { "US-CA": 0.05 };
 const SOCIAL_SECURITY_RATE = 0.062;
 const MEDICARE_RATE = 0.0145;
 
-/** Progressive tax on an annual amount, computed bracket-by-bracket. */
-function progressiveTax(annualMinor: Minor, brackets: typeof US_FEDERAL_BRACKETS_2024_SINGLE): Minor {
+export interface TaxBracket {
+  upToAnnualMinor: number; // Infinity for the top, open-ended bracket
+  rate: number;
+}
+
+/**
+ * Progressive tax on an annual amount, computed bracket-by-bracket. Exported
+ * so the Legal-to-Code diff engine (lib/tax-rule-diff.ts) can run the exact
+ * same math against a proposed bracket set that the real payroll engine
+ * runs against the live one - the "sandbox" comparison is never a
+ * reimplementation that could quietly drift from what actually gets paid.
+ */
+export function progressiveTax(annualMinor: Minor, brackets: TaxBracket[]): Minor {
   let tax = 0;
   let lower = 0;
   for (const bracket of brackets) {
@@ -270,6 +281,16 @@ function computeUkLine(input: PayrollLineInput, grossMinor: Minor, periodFractio
 
   return finalizeLine(input, grossMinor, deductions);
 }
+
+// The live income-tax bracket set per jurisdiction, exposed read-only so
+// the Legal-to-Code diff engine can compare "what production actually
+// charges today" against a proposed replacement without hand-copying the
+// numbers into a second place that could drift out of sync with this file.
+export const LIVE_INCOME_TAX_BRACKETS: Record<string, TaxBracket[]> = {
+  "US-CA": US_FEDERAL_BRACKETS_2024_SINGLE,
+  IN: INDIA_NEW_REGIME_BRACKETS_FY2024_25,
+  UK: UK_INCOME_TAX_BANDS_2024_25,
+};
 
 function finalizeLine(input: PayrollLineInput, grossMinor: Minor, deductions: DeductionLine[]): PayrollLineResult {
   const totalDeductions = deductions.reduce((sum, d) => sum + d.amountMinor, 0);

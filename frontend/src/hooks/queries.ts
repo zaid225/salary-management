@@ -208,6 +208,30 @@ export function useStartPreflightAudit() {
   );
 }
 
+// --- Legal-to-Code tax rule diff ---
+
+export function useProposeTaxRuleDiff() {
+  const { api } = useOrg();
+  return useOrgMutation(
+    (
+      body: { jurisdiction: string; legalText?: string; proposedBrackets?: { upToAnnualMinor: number | null; rate: number }[] },
+      { orgId },
+    ) =>
+      api.request<{ proposal: AiProposal; jobId: string }>("/api/tax-rules/propose-diff", {
+        method: "POST",
+        body,
+        orgId,
+        // Same rationale as the pre-flight auditor - the legalText path is a
+        // real model call with the backend's own 55s ceiling.
+        signal: AbortSignal.timeout(120_000),
+      }),
+    {
+      successMessage: () => "Tax rule diff proposed — see AI Proposals",
+      invalidate: (orgId) => [["ai-proposals", orgId]],
+    },
+  );
+}
+
 export function useReviewProposal() {
   const { api } = useOrg();
   return useOrgMutation(

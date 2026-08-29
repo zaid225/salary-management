@@ -47,3 +47,25 @@ export const HrisWebhookBody = z.object({
   source: z.string().min(1).max(50),
   punches: z.array(PunchIn).min(1).max(500), // bounded batch, not unbounded (database-indexing.md rule 2)
 });
+
+// null upToAnnualMinor means "and above" (the open-ended top bracket) - JSON
+// has no Infinity literal, so this is the wire representation; the
+// controller maps it to the engine's Infinity before running the diff.
+const TaxBracketIn = z.object({
+  upToAnnualMinor: z.number().positive().nullable(),
+  rate: z.number().min(0).max(1),
+});
+
+// Exactly one of legalText (AI extracts brackets from free text, gated
+// behind Rule #4's schema validation before it can influence anything) or
+// proposedBrackets (skip AI entirely, a human already knows the exact
+// numbers) - never both, never neither.
+export const ProposeTaxRuleDiffBody = z
+  .object({
+    jurisdiction: z.enum(["US-CA", "IN", "UK"]),
+    legalText: z.string().min(1).max(8000).optional(),
+    proposedBrackets: z.array(TaxBracketIn).min(1).max(20).optional(),
+  })
+  .refine((v) => Boolean(v.legalText) !== Boolean(v.proposedBrackets), {
+    message: "Provide exactly one of legalText or proposedBrackets",
+  });

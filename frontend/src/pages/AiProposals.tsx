@@ -1,15 +1,22 @@
 import * as React from "react";
-import { Sparkles } from "lucide-react";
-import { useAiProposals, useReviewProposal, useStartPreflightAudit } from "@/hooks/queries";
+import { Scale, Sparkles } from "lucide-react";
+import {
+  useAiProposals,
+  useProposeTaxRuleDiff,
+  useReviewProposal,
+  useStartPreflightAudit,
+} from "@/hooks/queries";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
 import { useOrg } from "@/lib/org-context";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatMoney } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -18,9 +25,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { NativeSelect } from "@/components/combo-field";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState } from "@/components/error-state";
-import type { AiProposal } from "@/lib/types";
+import type { AiProposal, TaxRuleDiffDetail } from "@/lib/types";
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" {
   if (status === "approved") return "default";
@@ -40,9 +48,69 @@ function severityVariant(sev: string): "outline" | "secondary" | "destructive" {
   return "outline";
 }
 
+function renderTaxDiff(diff: TaxRuleDiffDetail) {
+  if (diff.error) {
+    return <p className="text-sm text-destructive">Model call failed: {diff.error}</p>;
+  }
+  if (diff.unparsed) {
+    return (
+      <div className="space-y-1">
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          The model&apos;s response didn&apos;t match the expected bracket schema — held unparsed rather than
+          diffed.
+        </p>
+        <pre className="max-h-40 overflow-y-auto rounded-md bg-muted p-2 text-xs">{diff.unparsed}</pre>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Annual salary</TableHead>
+              <TableHead className="text-right">Current tax</TableHead>
+              <TableHead className="text-right">Proposed tax</TableHead>
+              <TableHead className="text-right">Delta</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {diff.scenarios.map((s, i) => (
+              <TableRow key={i}>
+                <TableCell className="tabular-nums">{formatMoney(s.annualSalaryMinor / 100, "USD")}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatMoney(s.currentAnnualTaxMinor / 100, "USD")}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatMoney(s.proposedAnnualTaxMinor / 100, "USD")}
+                </TableCell>
+                <TableCell
+                  className={`text-right tabular-nums font-medium ${s.deltaMinor > 0 ? "text-destructive" : s.deltaMinor < 0 ? "text-emerald-600 dark:text-emerald-400" : ""}`}
+                >
+                  {s.deltaMinor > 0 ? "+" : ""}
+                  {formatMoney(s.deltaMinor / 100, "USD")}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Scenarios use fixed representative salaries, not real employee data — this diff never touches what a
+        real payroll run computes; applying a new bracket table is a deliberately separate, unbuilt step.
+      </p>
+    </div>
+  );
+}
+
 function renderDiff(proposal: AiProposal) {
-  const diff = proposal.diff as { flags?: AnomalyFlag[]; error?: string; unparsed?: string } | null;
+  const diff = proposal.diff as
+    | ({ flags?: AnomalyFlag[]; error?: string; unparsed?: string } & Partial<TaxRuleDiffDetail>)
+    | null;
   if (!diff) return <p className="text-sm text-muted-foreground">No detail recorded.</p>;
+
+  if (proposal.proposalType === "tax_diff") return renderTaxDiff(diff as TaxRuleDiffDetail);
 
   if (diff.error) {
     return <p className="text-sm text-destructive">Model call failed: {diff.error}</p>;
@@ -90,10 +158,13 @@ export function AiProposalsPage() {
   const { data, isPending, isError, refetch } = useAiProposals();
   const review = useReviewProposal();
   const startAudit = useStartPreflightAudit();
+  const proposeTaxDiff = useProposeTaxRuleDiff();
   const [auditOpen, setAuditOpen] = React.useState(false);
+  const [taxDiffOpen, setTaxDiffOpen] = React.useState(false);
   const [periodStart, setPeriodStart] = React.useState("");
   const [periodEnd, setPeriodEnd] = React.useState("");
   const elapsed = useElapsedSeconds(startAudit.isPending);
+  const taxDiffElapsed = useElapsedSeconds(proposeTaxDiff.isPending);
 
   const proposals = data?.proposals ?? [];
   const pending = proposals.filter((p) => p.status === "pending");
@@ -106,10 +177,16 @@ export function AiProposalsPage() {
         description="Every AI-generated suggestion, gated behind an explicit human decision before anything downstream changes."
         actions={
           isAdmin && (
-            <Button size="sm" onClick={() => setAuditOpen(true)}>
-              <Sparkles />
-              Run pre-flight audit
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setTaxDiffOpen(true)}>
+                <Scale />
+                Propose tax rule diff
+              </Button>
+              <Button size="sm" onClick={() => setAuditOpen(true)}>
+                <Sparkles />
+                Run pre-flight audit
+              </Button>
+            </div>
           )
         }
       />
@@ -268,6 +345,172 @@ export function AiProposalsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ProposeTaxDiffDialog
+        open={taxDiffOpen}
+        onOpenChange={setTaxDiffOpen}
+        proposeTaxDiff={proposeTaxDiff}
+        elapsed={taxDiffElapsed}
+      />
     </div>
+  );
+}
+
+type ProposeTaxDiffMutation = ReturnType<typeof useProposeTaxRuleDiff>;
+
+// Legal-to-Code Compliance Diff Engine's entry point: either paste the
+// legal text and let the model extract a bracket table (validated
+// server-side before it can influence anything), or skip the model
+// entirely and enter the exact brackets directly - same "AI proposes,
+// deterministic math verifies, human approves" shape as the pre-flight
+// auditor, just for tax rules instead of payroll anomalies.
+function ProposeTaxDiffDialog({
+  open,
+  onOpenChange,
+  proposeTaxDiff,
+  elapsed,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  proposeTaxDiff: ProposeTaxDiffMutation;
+  elapsed: number;
+}) {
+  const [jurisdiction, setJurisdiction] = React.useState("US-CA");
+  const [mode, setMode] = React.useState<"legalText" | "brackets">("legalText");
+  const [legalText, setLegalText] = React.useState("");
+  const [bracketsJson, setBracketsJson] = React.useState(
+    '[\n  { "upToAnnualMinor": 1000000, "rate": 0.1 },\n  { "upToAnnualMinor": null, "rate": 0.2 }\n]',
+  );
+  const [jsonError, setJsonError] = React.useState<string | null>(null);
+
+  function reset() {
+    setLegalText("");
+    setJsonError(null);
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) reset();
+        onOpenChange(o);
+      }}
+    >
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Propose a tax rule diff</DialogTitle>
+          <DialogDescription>
+            Runs the proposed brackets against fixed representative salaries and compares to the live
+            brackets — pure math, never the model. Nothing here changes what a real payroll run computes.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setJsonError(null);
+            if (mode === "legalText") {
+              await proposeTaxDiff.mutateAsync({ jurisdiction, legalText });
+            } else {
+              let parsed: unknown;
+              try {
+                parsed = JSON.parse(bracketsJson);
+              } catch {
+                setJsonError("Not valid JSON.");
+                return;
+              }
+              await proposeTaxDiff.mutateAsync({
+                jurisdiction,
+                proposedBrackets: parsed as { upToAnnualMinor: number | null; rate: number }[],
+              });
+            }
+            onOpenChange(false);
+            reset();
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="taxDiffJurisdiction">Jurisdiction</Label>
+            <NativeSelect
+              id="taxDiffJurisdiction"
+              value={jurisdiction}
+              onChange={(e) => setJurisdiction(e.target.value)}
+            >
+              <option value="US-CA">US-CA</option>
+              <option value="IN">IN</option>
+              <option value="UK">UK</option>
+            </NativeSelect>
+          </div>
+
+          <div className="flex gap-2 text-sm">
+            <button
+              type="button"
+              onClick={() => setMode("legalText")}
+              className={`rounded-md border px-2.5 py-1 ${mode === "legalText" ? "border-primary bg-primary/10" : "border-input"}`}
+            >
+              From legal text (AI)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("brackets")}
+              className={`rounded-md border px-2.5 py-1 ${mode === "brackets" ? "border-primary bg-primary/10" : "border-input"}`}
+            >
+              Direct brackets (no AI)
+            </button>
+          </div>
+
+          {mode === "legalText" ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="legalText">Legal / regulatory text</Label>
+              <Textarea
+                id="legalText"
+                rows={5}
+                placeholder="Paste the bracket-relevant portion of the new law or regulation…"
+                value={legalText}
+                onChange={(e) => setLegalText(e.target.value)}
+                required
+              />
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="bracketsJson">Proposed brackets (JSON array, upToAnnualMinor: null for the top)</Label>
+              <Textarea
+                id="bracketsJson"
+                rows={6}
+                className="font-mono text-xs"
+                value={bracketsJson}
+                onChange={(e) => setBracketsJson(e.target.value)}
+                required
+              />
+              {jsonError && <p className="text-xs text-destructive">{jsonError}</p>}
+            </div>
+          )}
+
+          {proposeTaxDiff.isPending && mode === "legalText" && (
+            <div className="space-y-1.5 rounded-md border p-3">
+              <div className="flex items-center justify-between text-sm">
+                <span>Extracting brackets from the text…</span>
+                <span className="tabular-nums text-muted-foreground">{elapsed}s</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full w-1/3 animate-[import-sweep_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                One billed API call, regardless of how long it takes — closing this dialog does not cancel
+                it or send a second request either way.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {proposeTaxDiff.isPending ? "Run in background" : "Cancel"}
+            </Button>
+            <Button type="submit" disabled={proposeTaxDiff.isPending}>
+              {proposeTaxDiff.isPending ? `Running… ${elapsed}s` : "Propose diff"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
