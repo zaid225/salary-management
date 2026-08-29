@@ -128,10 +128,17 @@ export async function startPreflightAudit(
     model: "meta-llama/llama-3.1-8b-instruct",
     systemPrompt:
       "You audit payroll line items for anomalies (unusual amounts, outliers within a department/level) against ONLY the rows given. " +
-      "You never compute or adjust pay - you only flag rows for human review. " +
+      "You never compute or adjust pay - you only flag rows for human review. Flag only rows that genuinely " +
+      "look anomalous, not every row - most rows should have no flag at all. " +
       'Reply with strict JSON matching {"flags":[{"employeeToken":string,"reason":string,"severity":"low"|"medium"|"high"}]} and nothing else. ' +
       "If nothing looks anomalous, reply with an empty flags array.",
     userPrompt: toonPayload,
+    // The default 1024-token cap (lib/openrouter.ts) truncates mid-JSON
+    // once there are enough rows to flag, which fails AnomalyFindings
+    // parsing below and gets stored as "unparsed" even though the model
+    // call itself succeeded - not a hallucination, just not enough room to
+    // finish. Scale the budget with row count instead of a fixed cap.
+    maxTokens: Math.min(8000, 512 + toonRows.length * 40),
   });
 
   let diff: unknown;
