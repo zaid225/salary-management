@@ -172,6 +172,32 @@ export async function acceptInvitation(c: Context<AppBindings>): Promise<Respons
       return c.json({ error: { message: "Invitation is no longer valid", statusCode: 410 } }, 410);
     }
 
+    // Invites are for onboarding a NEW member into the org - accepting one
+    // must never change the role of someone who's already an active member
+    // (self-invited-at-a-lower-role, or a stale invite issued before a role
+    // change already caught up with them). That's what the dedicated
+    // role-change endpoint is for (members.controller.ts), which already
+    // guards against leaving an org with zero admins - this path used to
+    // bypass that guard entirely via a blind onConflictDoUpdate, and did:
+    // a sole admin who accepted a self-issued viewer invite got silently
+    // downgraded to viewer with no admin left to undo it.
+    const [existingActive] = await conn.db
+      .select()
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.organizationId, invite.organizationId),
+          eq(memberships.clerkUserId, userId),
+          eq(memberships.status, "active"),
+        ),
+      )
+      .limit(1);
+
+    if (existingActive) {
+      await conn.db.update(invitations).set({ status: "accepted" }).where(eq(invitations.id, invite.id));
+      return c.json({ organizationId: invite.organizationId, role: existingActive.role });
+    }
+
     await conn.db.transaction(async (tx) => {
       await tx
         .insert(memberships)

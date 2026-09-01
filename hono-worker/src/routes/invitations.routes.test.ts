@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll, beforeEach, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { testDb, testEnv, testExecutionCtx, truncateAll } from "../../test-utils/db.js";
 import { organizations, memberships, invitations, users } from "../models/schema.js";
 import { invitationsRoutes } from "./invitations.routes.js";
@@ -182,6 +182,52 @@ describe("POST /invitations/:token/accept", () => {
     const updatedInvite = updatedInviteRows[0];
     if (!updatedInvite) throw new Error("invite row missing");
     expect(updatedInvite.status).toBe("accepted");
+  });
+
+  it("never downgrades an already-active member's role - accepting a self-issued viewer invite as the sole admin keeps them admin", async () => {
+    // Regression test for a real production incident: a sole org admin
+    // self-invited at role 'viewer' (before the self-invite guard existed)
+    // and accepting it silently overwrote their own admin membership via
+    // the old blind onConflictDoUpdate, leaving the org with zero admins
+    // and no way back in. Invites must never change an already-active
+    // member's role - that's the role-change endpoint's job, which has its
+    // own "keep at least one admin" guard.
+    const org = await seedAdminOrg(); // admin_1 is the sole active admin
+    const inviteRows = await db
+      .insert(invitations)
+      .values({
+        organizationId: org.id,
+        email: "self@example.com",
+        role: "viewer",
+        token: "tok_self_downgrade",
+        status: "pending",
+        invitedBy: "admin_1",
+        expiresAt: new Date(Date.now() + 86_400_000),
+      })
+      .returning();
+    const invite = inviteRows[0];
+    if (!invite) throw new Error("insert did not return a row");
+
+    const res = await invitationsRoutes.fetch(
+      new Request(`http://test/invitations/${invite.token}/accept`, {
+        method: "POST",
+        headers: authed("admin_1"), // the sole admin accepting their own invite
+      }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { role: string };
+    expect(body.role).toBe("admin"); // reports their real current role, not the invite's stale "viewer"
+
+    const membershipRows = await db
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.organizationId, org.id), eq(memberships.clerkUserId, "admin_1")));
+    expect(membershipRows[0]).toMatchObject({ role: "admin", status: "active" }); // unchanged
+
+    const updatedInvite = (await db.select().from(invitations).where(eq(invitations.id, invite.id)))[0];
+    expect(updatedInvite!.status).toBe("accepted"); // the invite itself is still consumed
   });
 
   it("410s on an already-accepted invite", async () => {
