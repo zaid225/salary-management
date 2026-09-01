@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useUser } from "@clerk/clerk-react";
 import { useInvitations, useInviteMember, useMembers, useRemoveMember, useRevokeInvitation, useChangeMemberRole } from "@/hooks/queries";
 import { formatDate } from "@/lib/utils";
 import type { Role } from "@/lib/types";
@@ -31,8 +32,40 @@ export function MembersPage() {
   const removeMember = useRemoveMember();
   const revoke = useRevokeInvitation();
 
+  const { user: currentUser } = useUser();
+
   const [email, setEmail] = React.useState("");
   const [role, setRole] = React.useState<Role>("viewer");
+
+  // Debounced against the org data already loaded on this page (members +
+  // pending invitations) - no extra request per keystroke, no backend
+  // search endpoint needed. The server re-checks this exact same thing on
+  // submit regardless (invitations.controller.ts), so this is purely a
+  // faster, friendlier heads-up, never the actual security boundary.
+  const [debouncedEmail, setDebouncedEmail] = React.useState("");
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedEmail(email.trim().toLowerCase()), 300);
+    return () => clearTimeout(t);
+  }, [email]);
+
+  const emailIssue = React.useMemo(() => {
+    if (!debouncedEmail || !debouncedEmail.includes("@")) return null;
+    const selfEmail = currentUser?.primaryEmailAddress?.emailAddress?.toLowerCase();
+    if (selfEmail && debouncedEmail === selfEmail) {
+      return { blocking: true, message: "That's your own email address." };
+    }
+    const existingMember = members.data?.members.find((m) => m.user?.email?.toLowerCase() === debouncedEmail);
+    if (existingMember) {
+      return { blocking: true, message: "Already a member of this organization." };
+    }
+    const existingInvite = invitations.data?.invitations.find((inv) => inv.email.toLowerCase() === debouncedEmail);
+    if (existingInvite) {
+      // Not blocking - the server's own idempotent-invite path (POST
+      // returns 200 + the existing invite) already handles this gracefully.
+      return { blocking: false, message: "Already invited — sending again just re-shares the same link." };
+    }
+    return null;
+  }, [debouncedEmail, members.data, invitations.data, currentUser]);
 
   return (
     <div className="space-y-6">
@@ -46,11 +79,12 @@ export function MembersPage() {
             rather than sending a second one.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-1.5">
           <form
             className="flex flex-wrap gap-2"
             onSubmit={async (e) => {
               e.preventDefault();
+              if (emailIssue?.blocking) return;
               await invite.mutateAsync({ email, role });
               setEmail("");
             }}
@@ -62,6 +96,7 @@ export function MembersPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="max-w-xs"
+              aria-invalid={emailIssue?.blocking ? true : undefined}
             />
             <select
               className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
@@ -71,10 +106,15 @@ export function MembersPage() {
               <option value="viewer">viewer</option>
               <option value="admin">admin</option>
             </select>
-            <Button type="submit" disabled={invite.isPending}>
+            <Button type="submit" disabled={invite.isPending || emailIssue?.blocking}>
               {invite.isPending ? "Sending…" : "Send invite"}
             </Button>
           </form>
+          {emailIssue && (
+            <p className={`text-xs ${emailIssue.blocking ? "text-destructive" : "text-muted-foreground"}`}>
+              {emailIssue.message}
+            </p>
+          )}
         </CardContent>
       </Card>
 

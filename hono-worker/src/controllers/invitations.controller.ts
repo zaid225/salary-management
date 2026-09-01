@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { z } from "zod/v4";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { AppBindings } from "../lib/context.js";
 import { getDb } from "../models/db.js";
 import { organizations, users, invitations, memberships } from "../models/schema.js";
@@ -28,6 +28,39 @@ export async function createInvitation(c: Context<AppBindings, string, InviteIn>
   const orgId = c.get("orgId")!;
   const userId = c.get("userId")!;
   const { email, role } = c.req.valid("json");
+
+  // Self-invite guard: an admin's own email, case-insensitively - inviting
+  // yourself has no legitimate use here (you're already whatever role you
+  // already have) and only invites confusion via the accept flow's
+  // onConflictDoUpdate silently changing your own membership row.
+  const [inviterUser] = await db.select().from(users).where(eq(users.clerkUserId, userId)).limit(1);
+  if (inviterUser && inviterUser.email.toLowerCase() === email.toLowerCase()) {
+    return c.json({ error: { message: "You can't invite yourself", statusCode: 400 } }, 400);
+  }
+
+  // Already-a-member guard: an email that already belongs to an ACTIVE
+  // member of this org shouldn't get a fresh invite at all - promoting or
+  // demoting an existing member is what the member-role endpoint is for
+  // (members.controller.ts), not a re-invite. A former member (status
+  // 'removed') can still be re-invited - only an active membership blocks this.
+  const [existingMember] = await db
+    .select({ membershipId: memberships.id })
+    .from(memberships)
+    .innerJoin(users, eq(users.clerkUserId, memberships.clerkUserId))
+    .where(
+      and(
+        eq(memberships.organizationId, orgId),
+        eq(memberships.status, "active"),
+        sql`lower(${users.email}) = lower(${email})`,
+      ),
+    )
+    .limit(1);
+  if (existingMember) {
+    return c.json(
+      { error: { message: "This email already belongs to a member of this organization", statusCode: 409 } },
+      409,
+    );
+  }
 
   const scoped = scopedDb(db, orgId);
   const existing = await scoped.invitations.findPendingByEmail(email);

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll, beforeEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { testDb, testEnv, testExecutionCtx, truncateAll } from "../../test-utils/db.js";
-import { organizations, memberships, invitations } from "../models/schema.js";
+import { organizations, memberships, invitations, users } from "../models/schema.js";
 import { invitationsRoutes } from "./invitations.routes.js";
 
 const { db, client } = testDb();
@@ -90,6 +90,57 @@ describe("POST /organizations/:orgId/invitations", () => {
       testEnv(), testExecutionCtx(),
     );
     expect(res.status).toBe(403);
+  });
+
+  it("400s an admin trying to invite their own email", async () => {
+    const org = await seedAdminOrg();
+    await db.insert(users).values({ clerkUserId: "admin_1", email: "admin@example.com", name: "Admin" });
+
+    const res = await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${org.id}/invitations`, {
+        method: "POST",
+        headers: authed("admin_1", org.id),
+        // Case-insensitive on purpose - the guard lowercases both sides.
+        body: JSON.stringify({ email: "ADMIN@example.com", role: "viewer" }),
+      }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("409s inviting an email that already belongs to an active member", async () => {
+    const org = await seedAdminOrg();
+    await db.insert(memberships).values({ organizationId: org.id, clerkUserId: "existing_1", role: "viewer", status: "active" });
+    await db.insert(users).values({ clerkUserId: "existing_1", email: "existing@example.com", name: "Existing" });
+
+    const res = await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${org.id}/invitations`, {
+        method: "POST",
+        headers: authed("admin_1", org.id),
+        body: JSON.stringify({ email: "existing@example.com", role: "admin" }),
+      }),
+      testEnv(),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(409);
+  });
+
+  it("allows re-inviting a former (removed) member's email", async () => {
+    const org = await seedAdminOrg();
+    await db.insert(memberships).values({ organizationId: org.id, clerkUserId: "gone_1", role: "viewer", status: "removed" });
+    await db.insert(users).values({ clerkUserId: "gone_1", email: "gone@example.com", name: "Gone" });
+
+    const res = await invitationsRoutes.fetch(
+      new Request(`http://test/organizations/${org.id}/invitations`, {
+        method: "POST",
+        headers: authed("admin_1", org.id),
+        body: JSON.stringify({ email: "gone@example.com", role: "viewer" }),
+      }),
+      testEnv({ POSTMARK_SERVER_TOKEN: "tok" }),
+      testExecutionCtx(),
+    );
+    expect(res.status).toBe(201);
   });
 });
 
